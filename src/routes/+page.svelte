@@ -80,6 +80,7 @@
   let showCookies = $state(false);
   let showCodegen = $state(false);
   let codegenText = $state("");
+  let codegenCopied = $state(false);
   let importText = $state("");
   let searchQ = $state("");
   let searchHits = $state<SearchHit[]>([]);
@@ -727,7 +728,21 @@
       },
       lang,
     );
+    codegenCopied = false;
     showCodegen = true;
+  }
+
+  async function copyCodegen() {
+    if (!codegenText) return;
+    try {
+      await navigator.clipboard.writeText(codegenText);
+      codegenCopied = true;
+      setTimeout(() => {
+        codegenCopied = false;
+      }, 1500);
+    } catch (e) {
+      console.error("Copy failed", e);
+    }
   }
 
   async function doSearch() {
@@ -1187,11 +1202,23 @@
     <div
       class="w-full max-w-xl rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4 shadow-2xl"
     >
-      <div class="mb-3 flex items-center justify-between">
+      <div class="mb-3 flex items-center justify-between gap-2">
         <h2 class="text-sm font-semibold">Code generation</h2>
-        <button type="button" class="icon-btn" onclick={() => (showCodegen = false)}
-          >×</button
-        >
+        <div class="flex items-center gap-1">
+          <button
+            type="button"
+            class="chip"
+            title="Copy to clipboard"
+            onclick={copyCodegen}
+          >
+            {codegenCopied ? "Copied" : "Copy"}
+          </button>
+          <button
+            type="button"
+            class="icon-btn"
+            onclick={() => (showCodegen = false)}>×</button
+          >
+        </div>
       </div>
       <pre
         class="max-h-96 overflow-auto rounded-md border border-app bg-white dark:bg-neutral-950 p-3 font-mono text-xs whitespace-pre-wrap"
