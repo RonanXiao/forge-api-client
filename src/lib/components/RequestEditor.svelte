@@ -2,9 +2,18 @@
   import { onMount } from "svelte";
   import { importCurl } from "$lib/api";
   import type { BodyType, EditorTab, HttpRequest } from "$lib/types";
-  import { emptyAuth, emptyScripts, looksLikeCurl, METHODS } from "$lib/utils";
+  import {
+    emptyAuth,
+    emptyKeyValue,
+    emptyScripts,
+    fieldsToBodyContent,
+    looksLikeCurl,
+    METHODS,
+    parseBodyFields,
+  } from "$lib/utils";
   import KeyValueEditor from "./KeyValueEditor.svelte";
   import CodeEditor from "./CodeEditor.svelte";
+  import type { KeyValue } from "$lib/types";
 
   interface Props {
     request: HttpRequest;
@@ -30,13 +39,21 @@
   let scriptTab = $state<"pre" | "post">("pre");
   let pasteHint = $state<string | null>(null);
 
+  // Postman-style form-data rows derived from body.content
+  let formRows = $derived.by((): KeyValue[] => {
+    if (request.body.type === "form" || request.body.type === "multipart") {
+      return parseBodyFields(request.body.content);
+    }
+    return [emptyKeyValue()];
+  });
+
   const bodyTypes: { id: BodyType; label: string }[] = [
-    { id: "none", label: "None" },
+    { id: "none", label: "none" },
+    { id: "form", label: "form-data" },
+    { id: "multipart", label: "multipart" },
     { id: "json", label: "JSON" },
-    { id: "form", label: "Form" },
-    { id: "raw", label: "Raw" },
-    { id: "multipart", label: "Multipart" },
-    { id: "binary", label: "Binary" },
+    { id: "raw", label: "raw" },
+    { id: "binary", label: "binary" },
   ];
 
   function patch(partial: Partial<HttpRequest>) {
@@ -204,17 +221,18 @@
           <button
             type="button"
             class="chip {request.body.type === bt.id ? 'chip-active' : ''}"
-            onclick={() =>
-              patch({
-                body: {
-                  ...request.body,
-                  type: bt.id,
-                  content:
-                    bt.id === "json" && !request.body.content
-                      ? "{\n  \n}"
-                      : request.body.content,
-                },
-              })}
+            onclick={() => {
+              let content = request.body.content;
+              if (bt.id === "json" && (!content || content.startsWith("["))) {
+                content = "{\n  \n}";
+              } else if (
+                (bt.id === "form" || bt.id === "multipart") &&
+                (!content || content.startsWith("{"))
+              ) {
+                content = fieldsToBodyContent([emptyKeyValue()]);
+              }
+              patch({ body: { ...request.body, type: bt.id, content } });
+            }}
           >
             {bt.label}
           </button>
@@ -229,14 +247,30 @@
           {dark}
           onchange={(content) => patch({ body: { ...request.body, content } })}
         />
+      {:else if request.body.type === "form" || request.body.type === "multipart"}
+        <p class="mb-2 text-[11px] text-neutral-500">
+          {request.body.type === "multipart"
+            ? "form-data — Key / Value (like Postman)"
+            : "x-www-form-urlencoded — Key / Value"}
+        </p>
+        <KeyValueEditor
+          items={formRows}
+          keyPlaceholder="Key"
+          valuePlaceholder="Value"
+          onchange={(fields) =>
+            patch({
+              body: {
+                ...request.body,
+                content: fieldsToBodyContent(fields),
+              },
+            })}
+        />
       {:else}
         <textarea
           class="input-field min-h-[220px] w-full resize-y font-mono text-xs leading-relaxed"
-          placeholder={request.body.type === "form" || request.body.type === "multipart"
-            ? "key1=value1\nkey2=value2"
-            : request.body.type === "binary"
-              ? "Base64-encoded content"
-              : "Request body"}
+          placeholder={request.body.type === "binary"
+            ? "Base64-encoded content"
+            : "Request body"}
           value={request.body.content}
           oninput={(e) =>
             patch({ body: { ...request.body, content: e.currentTarget.value } })}

@@ -30,6 +30,55 @@ export function emptyKeyValue(): KeyValue {
   return { key: "", value: "", enabled: true };
 }
 
+/** Parse form/multipart body.content → key/value rows (JSON array or legacy key=value). */
+export function parseBodyFields(content: string): KeyValue[] {
+  const trimmed = content.trim();
+  if (!trimmed) return [emptyKeyValue()];
+  if (trimmed.startsWith("[")) {
+    try {
+      const arr = JSON.parse(trimmed) as Array<{
+        key?: string;
+        value?: string;
+        enabled?: boolean;
+      }>;
+      if (Array.isArray(arr)) {
+        const rows = arr.map((r) => ({
+          key: r.key ?? "",
+          value: String(r.value ?? ""),
+          enabled: r.enabled !== false,
+        }));
+        if (rows.length === 0 || rows[rows.length - 1].key || rows[rows.length - 1].value) {
+          rows.push(emptyKeyValue());
+        }
+        return rows;
+      }
+    } catch {
+      /* fall through */
+    }
+  }
+  const rows: KeyValue[] = [];
+  for (const line of content.split("\n")) {
+    const t = line.trim();
+    if (!t) continue;
+    const i = t.indexOf("=");
+    if (i >= 0) {
+      rows.push({ key: t.slice(0, i), value: t.slice(i + 1), enabled: true });
+    }
+  }
+  rows.push(emptyKeyValue());
+  return rows.length > 1 ? rows : [emptyKeyValue()];
+}
+
+/** Serialize key/value rows to body.content JSON storage. */
+export function fieldsToBodyContent(fields: KeyValue[]): string {
+  const cleaned = fields.filter((f) => f.key || f.value);
+  return JSON.stringify(
+    cleaned.map((f) => ({ key: f.key, value: f.value, enabled: f.enabled })),
+    null,
+    2,
+  );
+}
+
 export function emptyAuth(): AuthConfig {
   return {
     type: "none",

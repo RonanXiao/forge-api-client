@@ -2,6 +2,7 @@ mod auth;
 mod codegen;
 mod cookies;
 mod env_interp;
+mod form_fields;
 mod http;
 mod import;
 mod models;

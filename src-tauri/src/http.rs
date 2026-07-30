@@ -144,41 +144,44 @@ pub async fn send_request(
                 request_builder = request_builder
                     .header("Content-Type", "application/x-www-form-urlencoded");
             }
-            let encoded = encode_form_body(&body.content);
+            let fields = crate::form_fields::parse_form_fields(&body.content);
+            let encoded = if !fields.is_empty() {
+                let mut ser = form_urlencoded::Serializer::new(String::new());
+                for f in fields.iter().filter(|f| f.enabled && !f.key.is_empty()) {
+                    ser.append_pair(&f.key, &f.value);
+                }
+                ser.finish()
+            } else {
+                encode_form_body(&body.content)
+            };
             request_builder = request_builder.body(encoded);
         }
         "raw" => {
             request_builder = request_builder.body(body.content);
         }
         "binary" => {
-            let bytes = if body.content.chars().all(|c| {
-                c.is_ascii_hexdigit() || c.is_whitespace()
-            }) && body.content.len() % 2 == 0
-                && !body.content.is_empty()
-                && body.content.chars().all(|c| c.is_ascii_hexdigit() || c.is_whitespace())
-            {
-                // try base64 first
-                base64::engine::general_purpose::STANDARD
-                    .decode(body.content.trim())
-                    .unwrap_or_else(|_| body.content.into_bytes())
-            } else {
-                base64::engine::general_purpose::STANDARD
-                    .decode(body.content.trim())
-                    .unwrap_or_else(|_| body.content.into_bytes())
-            };
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(body.content.trim())
+                .unwrap_or_else(|_| body.content.into_bytes());
             request_builder = request_builder.body(bytes);
         }
         "multipart" => {
+            let fields = crate::form_fields::parse_form_fields(&body.content);
             let mut form = reqwest::multipart::Form::new();
-            for line in body.content.lines() {
-                let line = line.trim();
-                if line.is_empty() {
-                    continue;
-                }
-                if let Some((k, v)) = line.split_once('=') {
-                    form = form.text(k.trim().to_string(), v.trim().to_string());
-                }
+            for f in fields.iter().filter(|f| f.enabled && !f.key.is_empty()) {
+                let value = if let Some(b64) = f.value.strip_prefix("[binary:base64]") {
+                    // decode binary field if we stored it that way
+                    base64::engine::general_purpose::STANDARD
+                        .decode(b64)
+                        .ok()
+                        .and_then(|b| String::from_utf8(b).ok())
+                        .unwrap_or_else(|| f.value.clone())
+                } else {
+                    f.value.clone()
+                };
+                form = form.text(f.key.clone(), value);
             }
+            // Do not set Content-Type manually — reqwest generates boundary
             request_builder = request_builder.multipart(form);
         }
         _ => {}

@@ -208,6 +208,24 @@ pub fn parse_curl(input: &str) -> Result<HttpRequest, String> {
         }
     }
 
+    // Parse raw multipart → structured form fields (Postman-style key/value storage)
+    if body.body_type == "multipart"
+        || body.content.contains("Content-Disposition: form-data")
+        || body.content.contains("WebKitFormBoundary")
+    {
+        body.body_type = "multipart".into();
+        let (bt, content) =
+            crate::form_fields::normalize_body_content("multipart", &body.content);
+        body.body_type = bt;
+        body.content = content;
+        // Drop client Content-Type with boundary — reqwest sets its own when sending multipart
+        headers.retain(|h| !h.key.eq_ignore_ascii_case("content-type"));
+    } else if body.body_type == "form" {
+        let (bt, content) = crate::form_fields::normalize_body_content("form", &body.content);
+        body.body_type = bt;
+        body.content = content;
+    }
+
     let mut query = vec![];
     if let Some((base, qs)) = url.split_once('?') {
         for pair in qs.split('&') {
@@ -710,18 +728,32 @@ mod tests {
         let raw = r#"curl 'http://10.12.105.185:20600/api/test' \
   -H 'Accept: application/json' \
   -H 'Content-Type: multipart/form-data; boundary=----WebKitFormBoundary' \
-  --data-raw $'------WebKitFormBoundary\r\nContent-Disposition: form-data; name="pageNo"\r\n\r\n1\r\n------WebKitFormBoundary--\r\n' \
+  --data-raw $'------WebKitFormBoundary\r\nContent-Disposition: form-data; name="pageNo"\r\n\r\n1\r\n------WebKitFormBoundary\r\nContent-Disposition: form-data; name="beginDatetime"\r\n\r\n2026-07-31 12:00\r\n------WebKitFormBoundary--\r\n' \
   --insecure"#;
         let req = parse_curl(raw).unwrap();
         assert_eq!(req.method, "POST");
         assert_eq!(req.url, "http://10.12.105.185:20600/api/test");
+        assert_eq!(req.body.body_type, "multipart");
+        // Structured JSON fields — not raw boundary dump
+        assert!(req.body.content.trim_start().starts_with('['), "{}", req.body.content);
+        let fields = crate::form_fields::parse_form_fields(&req.body.content);
         assert!(
-            req.body.body_type == "multipart" || req.body.body_type == "raw",
-            "body type={}",
-            req.body.body_type
+            fields.iter().any(|f| f.key == "pageNo" && f.value == "1"),
+            "{:?}",
+            fields
         );
-        assert!(req.body.content.contains("pageNo") || req.body.content.contains("form-data"));
-        assert!(req.body.content.contains('\n') || req.body.content.contains("pageNo"));
+        assert!(
+            fields
+                .iter()
+                .any(|f| f.key == "beginDatetime" && f.value.contains("2026-07-31")),
+            "{:?}",
+            fields
+        );
+        // Content-Type with boundary stripped so send can set its own
+        assert!(!req
+            .headers
+            .iter()
+            .any(|h| h.key.eq_ignore_ascii_case("content-type")));
     }
 
     #[test]
