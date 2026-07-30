@@ -180,8 +180,8 @@
   function normalizeRequest(r: HttpRequest): HttpRequest {
     return {
       ...r,
-      headers: r.headers?.length ? r.headers : [emptyKeyValue()],
-      query: r.query?.length ? r.query : [emptyKeyValue()],
+      headers: (r.headers ?? []).filter((h) => h.key?.trim()),
+      query: (r.query ?? []).filter((q) => q.key?.trim()),
       auth: r.auth ?? emptyAuth(),
       config: r.config ?? {
         timeoutMs: 30000,
@@ -613,8 +613,8 @@
       name: request?.name ?? `${entry.method} ${entry.url}`,
       method: (r.method?.toUpperCase() as HttpRequest["method"]) || "GET",
       url: r.url,
-      headers: r.headers?.length ? r.headers : [emptyKeyValue()],
-      query: r.query?.length ? r.query : [emptyKeyValue()],
+      headers: (r.headers ?? []).filter((h) => h.key?.trim()),
+      query: (r.query ?? []).filter((q) => q.key?.trim()),
       body: r.body ?? { type: "none", content: "" },
       auth: (r as { auth?: HttpRequest["auth"] }).auth ?? emptyAuth(),
       config: (r as { config?: HttpRequest["config"] }).config ?? {

@@ -44,7 +44,7 @@
     if (request.body.type === "form" || request.body.type === "multipart") {
       return parseBodyFields(request.body.content);
     }
-    return [emptyKeyValue()];
+    return [];
   });
 
   const bodyTypes: { id: BodyType; label: string }[] = [
@@ -60,14 +60,10 @@
     onchange({ ...request, ...partial });
   }
 
-  function ensureKvRows(
+  function realKvRows(
     list: { key: string; value: string; enabled: boolean }[] | undefined,
-  ) {
-    const rows = list?.length ? [...list] : [];
-    if (rows.length === 0 || rows[rows.length - 1]?.key || rows[rows.length - 1]?.value) {
-      rows.push({ key: "", value: "", enabled: true });
-    }
-    return rows;
+  ): KeyValue[] {
+    return (list ?? []).filter((r) => (r.key ?? "").trim().length > 0);
   }
 
   async function onUrlPaste(e: ClipboardEvent) {
@@ -96,8 +92,8 @@
             : request.name,
         method,
         url: parsed.url || "",
-        headers: ensureKvRows(parsed.headers),
-        query: ensureKvRows(parsed.query),
+        headers: realKvRows(parsed.headers),
+        query: realKvRows(parsed.query),
         body: parsed.body ?? { type: "none", content: "" },
         auth,
         config: parsed.config ?? request.config,
@@ -229,7 +225,7 @@
                 (bt.id === "form" || bt.id === "multipart") &&
                 (!content || content.startsWith("{"))
               ) {
-                content = fieldsToBodyContent([emptyKeyValue()]);
+                content = "[]";
               }
               patch({ body: { ...request.body, type: bt.id, content } });
             }}

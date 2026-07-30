@@ -30,10 +30,10 @@ export function emptyKeyValue(): KeyValue {
   return { key: "", value: "", enabled: true };
 }
 
-/** Parse form/multipart body.content → key/value rows (JSON array or legacy key=value). */
+/** Parse form/multipart body.content → key/value rows (no trailing blank row). */
 export function parseBodyFields(content: string): KeyValue[] {
   const trimmed = content.trim();
-  if (!trimmed) return [emptyKeyValue()];
+  if (!trimmed) return [];
   if (trimmed.startsWith("[")) {
     try {
       const arr = JSON.parse(trimmed) as Array<{
@@ -42,15 +42,13 @@ export function parseBodyFields(content: string): KeyValue[] {
         enabled?: boolean;
       }>;
       if (Array.isArray(arr)) {
-        const rows = arr.map((r) => ({
-          key: r.key ?? "",
-          value: String(r.value ?? ""),
-          enabled: r.enabled !== false,
-        }));
-        if (rows.length === 0 || rows[rows.length - 1].key || rows[rows.length - 1].value) {
-          rows.push(emptyKeyValue());
-        }
-        return rows;
+        return arr
+          .map((r) => ({
+            key: r.key ?? "",
+            value: String(r.value ?? ""),
+            enabled: r.enabled !== false,
+          }))
+          .filter((r) => r.key.trim().length > 0);
       }
     } catch {
       /* fall through */
@@ -62,11 +60,11 @@ export function parseBodyFields(content: string): KeyValue[] {
     if (!t) continue;
     const i = t.indexOf("=");
     if (i >= 0) {
-      rows.push({ key: t.slice(0, i), value: t.slice(i + 1), enabled: true });
+      const key = t.slice(0, i).trim();
+      if (key) rows.push({ key, value: t.slice(i + 1), enabled: true });
     }
   }
-  rows.push(emptyKeyValue());
-  return rows.length > 1 ? rows : [emptyKeyValue()];
+  return rows;
 }
 
 /** Serialize key/value rows to body.content JSON storage (drop empty keys). */
@@ -104,8 +102,8 @@ export function createEmptyRequest(
     name,
     method: "GET",
     url: "https://httpbin.org/get",
-    headers: [emptyKeyValue()],
-    query: [emptyKeyValue()],
+    headers: [],
+    query: [],
     body: { type: "none", content: "" },
     auth: emptyAuth(),
     config: {
