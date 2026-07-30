@@ -39,7 +39,8 @@ pnpm install
 pnpm tauri:build
 ```
 
-会先构建前端，再编译 Rust release，并打出安装包；macOS 上还会跑 `scripts/fix-macos-dmg.sh`，**删除** DMG 里的 `.VolumeIcon.icns`（卷图标资源），避免安装窗口里多出一个图标。
+会先构建前端，再编译 Rust release，并打出安装包；macOS 上还会跑 `scripts/fix-macos-dmg.sh`：  
+**丢弃 Tauri 自带的 DMG**，用 `.app` 重新打一个干净盘（只有 `Forge.app` + `Applications`，不含 `.VolumeIcon.icns`）。
 
 ### 产物路径（macOS）
 
@@ -57,7 +58,8 @@ DMG 里正常应只有：
 1. **Forge.app** — 应用本体  
 2. **Applications** — 应用程序文件夹快捷方式（拖进去完成安装）  
 
-正常打包后不应再出现 `.VolumeIcon.icns`。若你打开的是旧 DMG，请重新 `pnpm tauri:build` 或对已有包跑：`bash scripts/fix-macos-dmg.sh`。
+若安装窗口里仍看到 `.VolumeIcon.icns`，多半是旧 DMG 还挂着：在 Finder 侧栏把 **Forge** 推出，再打开  
+`src-tauri/target/release/bundle/dmg/Forge_*.dmg`。
 
 ### 其他平台
 
