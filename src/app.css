@@ -1,0 +1,117 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, Consolas,
+    monospace;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  font-family: var(--font-sans);
+  background: #020617;
+  color: #f1f5f9;
+  -webkit-font-smoothing: antialiased;
+}
+
+html.light,
+html.light body {
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+html.light .input-field {
+  @apply border-slate-300 bg-white text-slate-900 placeholder:text-slate-400;
+}
+
+html.light .tab-btn {
+  @apply text-slate-600 hover:bg-slate-200 hover:text-slate-900;
+}
+
+html.light .tab-active {
+  @apply bg-slate-200 text-slate-900;
+}
+
+html.light .chip {
+  @apply border-slate-300 text-slate-600;
+}
+
+html.light .chip-active {
+  @apply border-indigo-400 bg-indigo-50 text-indigo-700;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #334155 transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 4px;
+}
+
+.input-field {
+  @apply rounded-md border border-slate-700/80 bg-slate-900/80 px-2.5 py-1.5 text-slate-100
+    placeholder:text-slate-600 outline-none transition
+    focus:border-indigo-500/60 focus:ring-1 focus:ring-indigo-500/30;
+}
+
+.input-ghost {
+  @apply border-0 bg-transparent px-1 py-0.5 outline-none
+    focus:ring-0;
+}
+
+.btn-primary {
+  @apply rounded-md bg-indigo-500 px-3 py-1.5 text-sm font-semibold text-white
+    transition hover:bg-indigo-400
+    disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-indigo-500;
+}
+
+.tab-btn {
+  @apply rounded-md px-2.5 py-1.5 text-xs font-medium text-slate-400 transition
+    hover:bg-slate-800/60 hover:text-slate-200;
+}
+
+.tab-active {
+  @apply bg-slate-800 text-slate-100;
+}
+
+.icon-btn {
+  @apply rounded px-1.5 py-0.5 text-slate-400 transition hover:bg-slate-800 hover:text-slate-200;
+}
+
+.chip {
+  @apply rounded-full border border-slate-700/80 px-2.5 py-0.5 text-xs text-slate-400
+    transition hover:border-slate-600 hover:text-slate-200;
+}
+
+.chip-active {
+  @apply border-indigo-500/50 bg-indigo-500/15 text-indigo-300;
+}
+
+/* Select dark styling */
+select.input-field {
+  @apply appearance-none pr-7;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.5rem center;
+}
+
+select.input-field option {
+  background: #0f172a;
+  color: #e2e8f0;
+}
