@@ -100,6 +100,14 @@ export function statusBadgeBg(status: number): string {
   return "bg-neutral-500/15 text-neutral-600 ring-neutral-500/30 dark:text-neutral-400";
 }
 
+/**
+ * Deep clone plain data. Prefer this over structuredClone for Svelte 5 $state
+ * proxies (structuredClone throws DataCloneError on Proxies).
+ */
+export function deepClone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
 /** Detect pasted cURL command (single or multi-line, optional leading whitespace). */
 export function looksLikeCurl(text: string): boolean {
   const t = text.trim();

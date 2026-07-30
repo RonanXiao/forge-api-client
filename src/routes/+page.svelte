@@ -45,6 +45,7 @@
   } from "$lib/types";
   import {
     createEmptyRequest,
+    deepClone,
     emptyAuth,
     emptyKeyValue,
     emptyScripts,
@@ -211,7 +212,10 @@
     selectedCollectionId = collectionId;
     selectedItemId = item.id;
     if (item.request) {
-      request = structuredClone(normalizeRequest(item.request));
+      // deepClone: Svelte $state proxies throw with structuredClone
+      request = deepClone(normalizeRequest(item.request));
+    } else {
+      request = null;
     }
     response = null;
     error = null;
@@ -250,7 +254,7 @@
     if (!request || !selectedCollectionId || !selectedItemId) return;
     const colIdx = collections.findIndex((c) => c.id === selectedCollectionId);
     if (colIdx < 0) return;
-    const col = structuredClone(collections[colIdx]);
+    const col = deepClone(collections[colIdx]);
     col.items = updateItemInTree(col.items, selectedItemId, (item) => ({
       ...item,
       name: request!.name,
@@ -319,7 +323,7 @@
     assertions = [];
 
     const variables = activeEnv ? varsFromEnv(activeEnv.variables) : {};
-    let working = structuredClone(request);
+    let working = deepClone(request);
 
     const col = collections.find((c) => c.id === selectedCollectionId);
     const scriptMeta = col
@@ -540,7 +544,7 @@
         error = `Collection not found: ${collectionId}`;
         return;
       }
-      const col = structuredClone(collections[colIdx]);
+      const col = deepClone(collections[colIdx]);
       col.items = [
         ...col.items,
         {
