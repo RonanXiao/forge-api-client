@@ -43,31 +43,46 @@
     onchange({ ...request, ...partial });
   }
 
+  function ensureKvRows(
+    list: { key: string; value: string; enabled: boolean }[] | undefined,
+  ) {
+    const rows = list?.length ? [...list] : [];
+    if (rows.length === 0 || rows[rows.length - 1]?.key || rows[rows.length - 1]?.value) {
+      rows.push({ key: "", value: "", enabled: true });
+    }
+    return rows;
+  }
+
   async function onUrlPaste(e: ClipboardEvent) {
     const text = e.clipboardData?.getData("text") ?? "";
     if (!looksLikeCurl(text)) return;
 
     e.preventDefault();
-    pasteHint = null;
+    pasteHint = "Parsing cURL…";
     try {
       const parsed = await importCurl(text);
       const method = (parsed.method?.toUpperCase() ||
         request.method) as HttpRequest["method"];
+      // Map auth: backend uses type via camelCase serde
+      const auth = {
+        ...emptyAuth(),
+        ...(parsed.auth ?? {}),
+        type: (parsed.auth?.type || "none") as HttpRequest["auth"]["type"],
+      };
       onchange({
         ...request,
         name:
-          request.name === "New Request" || request.name.startsWith("Sample")
-            ? parsed.name || request.name
+          !request.name ||
+          request.name === "New Request" ||
+          request.name.startsWith("Sample")
+            ? parsed.name || "Imported cURL"
             : request.name,
         method,
-        url: parsed.url || request.url,
-        headers:
-          parsed.headers?.length > 0
-            ? parsed.headers
-            : request.headers,
-        query: parsed.query?.length > 0 ? parsed.query : request.query,
-        body: parsed.body ?? request.body,
-        auth: parsed.auth ?? request.auth ?? emptyAuth(),
+        url: parsed.url || "",
+        headers: ensureKvRows(parsed.headers),
+        query: ensureKvRows(parsed.query),
+        body: parsed.body ?? { type: "none", content: "" },
+        auth,
         config: parsed.config ?? request.config,
         scripts: parsed.scripts ?? request.scripts ?? emptyScripts(),
       });
@@ -76,18 +91,17 @@
       } else if (parsed.headers?.some((h) => h.key)) {
         tab = "headers";
       }
-      pasteHint = "Imported from cURL";
+      pasteHint = "✓ Imported from cURL";
       setTimeout(() => {
         pasteHint = null;
       }, 2500);
     } catch (err) {
       console.error(err);
-      // Fallback: paste as plain URL text
-      patch({ url: text.trim() });
-      pasteHint = "cURL parse failed — pasted as text";
+      pasteHint = `cURL parse failed: ${err}`;
+      // Do NOT dump the whole curl into the URL field
       setTimeout(() => {
         pasteHint = null;
-      }, 3000);
+      }, 5000);
     }
   }
 

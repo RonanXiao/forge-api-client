@@ -9,7 +9,6 @@
     generateCode,
     getConfig,
     getWorkspacePath,
-    importCurl,
     importPostman,
     listCollections,
     loadCookies,
@@ -79,7 +78,6 @@
   let showCodegen = $state(false);
   let codegenText = $state("");
   let importText = $state("");
-  let importMode = $state<"curl" | "postman">("curl");
   let searchQ = $state("");
   let searchHits = $state<SearchHit[]>([]);
   let showSearch = $state(false);
@@ -488,50 +486,74 @@
   }
 
   async function handleNewRequest(collectionId: string, parentId?: string | null) {
-    const reqId = await newId();
-    const req = createEmptyRequest(reqId, "New Request");
-    const colIdx = collections.findIndex((c) => c.id === collectionId);
-    if (colIdx < 0) return;
-    const col = structuredClone(collections[colIdx]);
-    const item: CollectionItem = {
-      id: reqId,
-      type: "request",
-      name: req.name,
-      request: req,
-    };
-    if (parentId) {
-      function addToFolder(items: CollectionItem[]): boolean {
-        for (const it of items) {
-          if (it.id === parentId) {
-            it.children = [...(it.children ?? []), item];
-            return true;
-          }
-          if (it.children && addToFolder(it.children)) return true;
-        }
-        return false;
+    try {
+      const reqId = await newId();
+      const req = createEmptyRequest(reqId, "New Request");
+      const colIdx = collections.findIndex((c) => c.id === collectionId);
+      if (colIdx < 0) {
+        error = `Collection not found: ${collectionId}`;
+        return;
       }
-      addToFolder(col.items);
-    } else {
-      col.items.push(item);
+      const col = structuredClone(collections[colIdx]);
+      const item: CollectionItem = {
+        id: reqId,
+        type: "request",
+        name: req.name,
+        request: req,
+      };
+      if (parentId) {
+        function addToFolder(items: CollectionItem[]): boolean {
+          for (const it of items) {
+            if (it.id === parentId) {
+              it.children = [...(it.children ?? []), item];
+              return true;
+            }
+            if (it.children && addToFolder(it.children)) return true;
+          }
+          return false;
+        }
+        if (!addToFolder(col.items)) {
+          // parent missing — append to root
+          col.items.push(item);
+        }
+      } else {
+        col.items = [...col.items, item];
+      }
+      await saveCollection(col);
+      collections = collections.map((c, i) => (i === colIdx ? col : c));
+      selectItem(collectionId, item);
+      error = null;
+    } catch (e) {
+      error = `New request failed: ${e}`;
+      console.error(e);
     }
-    await saveCollection(col);
-    collections = collections.map((c, i) => (i === colIdx ? col : c));
-    selectItem(collectionId, item);
   }
 
   async function handleNewFolder(collectionId: string) {
-    const folderId = await newId();
-    const colIdx = collections.findIndex((c) => c.id === collectionId);
-    if (colIdx < 0) return;
-    const col = structuredClone(collections[colIdx]);
-    col.items.push({
-      id: folderId,
-      type: "folder",
-      name: "New Folder",
-      children: [],
-    });
-    await saveCollection(col);
-    collections = collections.map((c, i) => (i === colIdx ? col : c));
+    try {
+      const folderId = await newId();
+      const colIdx = collections.findIndex((c) => c.id === collectionId);
+      if (colIdx < 0) {
+        error = `Collection not found: ${collectionId}`;
+        return;
+      }
+      const col = structuredClone(collections[colIdx]);
+      col.items = [
+        ...col.items,
+        {
+          id: folderId,
+          type: "folder",
+          name: "New Folder",
+          children: [],
+        },
+      ];
+      await saveCollection(col);
+      collections = collections.map((c, i) => (i === colIdx ? col : c));
+      error = null;
+    } catch (e) {
+      error = `New folder failed: ${e}`;
+      console.error(e);
+    }
   }
 
   async function handleDeleteCollection(id: string) {
@@ -632,34 +654,15 @@
 
   async function doImport() {
     try {
-      if (importMode === "curl") {
-        const req = await importCurl(importText);
-        const colId = selectedCollectionId ?? collections[0]?.id;
-        if (!colId) {
-          await handleNewCollection();
-        }
-        const cid = selectedCollectionId ?? collections[0].id;
-        const colIdx = collections.findIndex((c) => c.id === cid);
-        const col = structuredClone(collections[colIdx]);
-        const item: CollectionItem = {
-          id: req.id,
-          type: "request",
-          name: req.name,
-          request: normalizeRequest(req),
-        };
-        col.items.push(item);
-        await saveCollection(col);
-        collections = collections.map((c, i) => (i === colIdx ? col : c));
-        selectItem(cid, item);
-      } else {
-        const col = await importPostman(importText);
-        await saveCollection(col);
-        collections = [...collections, col];
-      }
+      // cURL is imported by pasting into the URL bar — this dialog is Postman only
+      const col = await importPostman(importText);
+      await saveCollection(col);
+      collections = [...collections, col];
       showImport = false;
       importText = "";
+      error = null;
     } catch (e) {
-      error = String(e);
+      error = `Import failed: ${e}`;
     }
   }
 
@@ -723,6 +726,16 @@
   />
 
   <main class="flex min-w-0 flex-1 flex-col">
+    {#if error}
+      <div
+        class="flex shrink-0 items-center gap-2 border-b border-rose-200 bg-rose-50 px-3 py-1.5 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-300"
+      >
+        <span class="min-w-0 flex-1 break-all">{error}</span>
+        <button type="button" class="icon-btn shrink-0" onclick={() => (error = null)}
+          >×</button
+        >
+      </div>
+    {/if}
     <header
       class="flex h-11 shrink-0 items-center gap-2 border-b border-app px-3"
     >
@@ -773,7 +786,9 @@
         {/if}
       </div>
 
-      <button type="button" class="chip" onclick={() => (showImport = true)}>Import</button>
+      <button type="button" class="chip" onclick={() => (showImport = true)}
+        >Import Postman</button
+      >
       <button type="button" class="chip" onclick={() => (showCookies = true)}
         >Cookies</button
       >
@@ -1040,28 +1055,18 @@
       class="w-full max-w-xl rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4 shadow-2xl"
     >
       <div class="mb-3 flex items-center justify-between">
-        <h2 class="text-sm font-semibold">Import</h2>
+        <h2 class="text-sm font-semibold">Import Postman Collection</h2>
         <button type="button" class="icon-btn" onclick={() => (showImport = false)}
           >×</button
         >
       </div>
-      <div class="mb-2 flex gap-2">
-        <button
-          type="button"
-          class="chip {importMode === 'curl' ? 'chip-active' : ''}"
-          onclick={() => (importMode = "curl")}>cURL</button
-        >
-        <button
-          type="button"
-          class="chip {importMode === 'postman' ? 'chip-active' : ''}"
-          onclick={() => (importMode = "postman")}>Postman v2.1</button
-        >
-      </div>
+      <p class="mb-2 text-xs text-neutral-500">
+        Paste Postman Collection v2.1 JSON. For cURL, paste directly into the URL bar
+        instead.
+      </p>
       <textarea
         class="input-field mb-3 min-h-[200px] w-full font-mono text-xs"
-        placeholder={importMode === "curl"
-          ? "Paste cURL command…"
-          : "Paste Postman Collection JSON…"}
+        placeholder="Paste Postman Collection JSON…"
         bind:value={importText}
       ></textarea>
       <button type="button" class="btn-primary" onclick={doImport}>Import</button>

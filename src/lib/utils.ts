@@ -100,12 +100,15 @@ export function statusBadgeBg(status: number): string {
   return "bg-neutral-500/15 text-neutral-600 ring-neutral-500/30 dark:text-neutral-400";
 }
 
-/** Detect pasted cURL command (single or multi-line). */
+/** Detect pasted cURL command (single or multi-line, optional leading whitespace). */
 export function looksLikeCurl(text: string): boolean {
   const t = text.trim();
   if (!t) return false;
-  const head = t.slice(0, 80).toLowerCase();
-  return head.startsWith("curl ") || head.startsWith("curl\t") || head.startsWith("curl\n");
+  // Allow "curl ..." or "CURL ..." after optional shell noise
+  if (/^curl(\s|$)/i.test(t)) return true;
+  // Multi-line export sometimes starts with comment then curl
+  if (/\n\s*curl\s/i.test(t) && t.toLowerCase().includes("curl ")) return true;
+  return false;
 }
 
 export function varsFromEnv(
