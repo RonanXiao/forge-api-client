@@ -758,3 +758,24 @@ mod tests {
         assert_eq!(child.request.as_ref().unwrap().method, "GET");
     }
 }
+
+#[cfg(test)]
+mod user_curl_fixture {
+    use super::*;
+
+    #[test]
+    fn parse_realistic_browser_copy_curl() {
+        // Shape similar to Chrome "Copy as cURL" with ANSI-C body
+        let raw = r#"curl 'http://10.12.105.185:20600/api/ebuilder/coms/nlist/getData' \
+  -H 'Accept: application/json, text/plain, */*' \
+  -H 'Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryLaX8gFpGxFVowHCu' \
+  --data-raw $'------WebKitFormBoundaryLaX8gFpGxFVowHCu\r\nContent-Disposition: form-data; name="compId"\r\n\r\nnbacc4ca95d0344159f8963b69c94709c\r\n------WebKitFormBoundaryLaX8gFpGxFVowHCu\r\nContent-Disposition: form-data; name="pageNo"\r\n\r\n1\r\n------WebKitFormBoundaryLaX8gFpGxFVowHCu--\r\n' \
+  --insecure"#;
+        let req = parse_curl(raw).expect("should parse browser curl");
+        assert_eq!(req.method, "POST");
+        assert!(req.url.contains("10.12.105.185:20600"));
+        assert!(req.headers.iter().any(|h| h.key.eq_ignore_ascii_case("Accept")));
+        assert!(req.body.content.contains("compId") || req.body.content.contains("pageNo"));
+        assert_ne!(req.url.starts_with("curl"), true);
+    }
+}

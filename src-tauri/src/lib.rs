@@ -50,6 +50,29 @@ fn delete_collection(id: String) -> Result<(), String> {
     storage::delete_collection(&id)
 }
 
+/// Add a request to a collection (root or folder). Persists and returns full updated collection + new request id.
+#[tauri::command]
+fn add_request(
+    collection_id: String,
+    parent_id: Option<String>,
+    name: Option<String>,
+) -> Result<AddRequestResult, String> {
+    let name = name.unwrap_or_else(|| "New Request".into());
+    let (collection, request_id) =
+        storage::add_request_and_save(&collection_id, parent_id.as_deref(), &name)?;
+    Ok(AddRequestResult {
+        collection,
+        request_id,
+    })
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AddRequestResult {
+    collection: Collection,
+    request_id: String,
+}
+
 #[tauri::command]
 fn load_history() -> Result<Vec<HistoryEntry>, String> {
     storage::load_history()
@@ -203,6 +226,7 @@ pub fn run() {
             save_collection,
             save_collection_format,
             delete_collection,
+            add_request,
             load_history,
             append_history,
             clear_history,

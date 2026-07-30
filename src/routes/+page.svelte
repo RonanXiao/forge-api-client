@@ -1,6 +1,7 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import {
+    addRequest,
     appendHistory,
     clearHistory,
     deleteCollection,
@@ -485,47 +486,49 @@
     selectItem(colId, col.items[0]);
   }
 
+  function findItemById(
+    items: CollectionItem[],
+    id: string,
+  ): CollectionItem | null {
+    for (const it of items) {
+      if (it.id === id) return it;
+      if (it.children) {
+        const f = findItemById(it.children, id);
+        if (f) return f;
+      }
+    }
+    return null;
+  }
+
   async function handleNewRequest(collectionId: string, parentId?: string | null) {
     try {
-      const reqId = await newId();
-      const req = createEmptyRequest(reqId, "New Request");
-      const colIdx = collections.findIndex((c) => c.id === collectionId);
-      if (colIdx < 0) {
-        error = `Collection not found: ${collectionId}`;
-        return;
-      }
-      const col = structuredClone(collections[colIdx]);
-      const item: CollectionItem = {
-        id: reqId,
-        type: "request",
-        name: req.name,
-        request: req,
-      };
-      if (parentId) {
-        function addToFolder(items: CollectionItem[]): boolean {
-          for (const it of items) {
-            if (it.id === parentId) {
-              it.children = [...(it.children ?? []), item];
-              return true;
-            }
-            if (it.children && addToFolder(it.children)) return true;
-          }
-          return false;
-        }
-        if (!addToFolder(col.items)) {
-          // parent missing — append to root
-          col.items.push(item);
-        }
-      } else {
-        col.items = [...col.items, item];
-      }
-      await saveCollection(col);
-      collections = collections.map((c, i) => (i === colIdx ? col : c));
-      selectItem(collectionId, item);
       error = null;
+      // Single backend path — mutate + persist + return updated tree
+      const result = await addRequest(
+        collectionId,
+        parentId ?? null,
+        "New Request",
+      );
+      collections = collections.map((c) =>
+        c.id === collectionId ? result.collection : c,
+      );
+      // Expand collection so the new item is visible
+      const item = findItemById(result.collection.items, result.requestId);
+      if (item) {
+        selectItem(collectionId, item);
+      } else {
+        // fallback: re-list from disk
+        collections = await listCollections();
+        const col = collections.find((c) => c.id === collectionId);
+        const found = col
+          ? findItemById(col.items, result.requestId)
+          : null;
+        if (found) selectItem(collectionId, found);
+        else error = `Created request ${result.requestId} but UI could not select it`;
+      }
     } catch (e) {
-      error = `New request failed: ${e}`;
-      console.error(e);
+      error = `New request failed: ${String(e)}`;
+      console.error("handleNewRequest", e);
     }
   }
 
@@ -714,10 +717,10 @@
     selectedId={selectedItemId}
     {workspacePath}
     onselect={selectItem}
-    onnewRequest={handleNewRequest}
-    onnewFolder={handleNewFolder}
-    onnewCollection={handleNewCollection}
-    ondeleteCollection={handleDeleteCollection}
+    addRequest={handleNewRequest}
+    addFolder={handleNewFolder}
+    addCollection={handleNewCollection}
+    removeCollection={handleDeleteCollection}
     onrename={handleRename}
     ondeleteItem={handleDeleteItem}
     onreorder={handleReorder}

@@ -237,6 +237,92 @@ fn sanitize_filename(name: &str) -> String {
         .collect()
 }
 
+/// Create a minimal new request item (root of a collection or folder).
+pub fn make_request_item(id: &str, name: &str) -> CollectionItemMut {
+    CollectionItemMut {
+        id: id.to_string(),
+        item_type: "request".into(),
+        name: name.to_string(),
+        children: None,
+        request: Some(crate::models::HttpRequest {
+            id: id.to_string(),
+            name: name.to_string(),
+            method: "GET".into(),
+            url: "https://httpbin.org/get".into(),
+            headers: vec![],
+            query: vec![],
+            body: crate::models::RequestBody {
+                body_type: "none".into(),
+                content: String::new(),
+            },
+            auth: crate::models::AuthConfig {
+                auth_type: "none".into(),
+                ..Default::default()
+            },
+            config: crate::models::RequestConfig {
+                timeout_ms: Some(30_000),
+                max_redirects: Some(10),
+                follow_redirects: Some(true),
+            },
+            scripts: Default::default(),
+        }),
+        scripts: None,
+    }
+}
+
+/// Append a new request under collection root or under a folder (`parent_id`).
+/// Returns the updated collection and the new item id.
+pub fn add_request_to_collection(
+    collection: &mut Collection,
+    parent_id: Option<&str>,
+    request_id: &str,
+    name: &str,
+) -> Result<String, String> {
+    let item = make_request_item(request_id, name);
+    if let Some(pid) = parent_id {
+        if !append_to_folder(&mut collection.items, pid, item) {
+            return Err(format!("Folder not found: {pid}"));
+        }
+    } else {
+        collection.items.push(item);
+    }
+    Ok(request_id.to_string())
+}
+
+fn append_to_folder(items: &mut [CollectionItemMut], folder_id: &str, item: CollectionItemMut) -> bool {
+    for it in items.iter_mut() {
+        if it.id == folder_id && it.item_type == "folder" {
+            let children = it.children.get_or_insert_with(Vec::new);
+            children.push(item);
+            return true;
+        }
+        if let Some(ref mut children) = it.children {
+            if append_to_folder(children, folder_id, item.clone()) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Load collection by id, add request, save, return updated collection.
+pub fn add_request_and_save(
+    collection_id: &str,
+    parent_id: Option<&str>,
+    name: &str,
+) -> Result<(Collection, String), String> {
+    let mut collections = list_collections()?;
+    let col = collections
+        .iter_mut()
+        .find(|c| c.id == collection_id)
+        .ok_or_else(|| format!("Collection not found: {collection_id}"))?;
+    let req_id = uuid::Uuid::new_v4().to_string();
+    add_request_to_collection(col, parent_id, &req_id, name)?;
+    let saved = col.clone();
+    save_collection(&saved)?;
+    Ok((saved, req_id))
+}
+
 /// Tree helpers
 pub fn rename_item(items: &mut [CollectionItemMut], id: &str, name: &str) -> bool {
     for item in items.iter_mut() {
@@ -478,5 +564,61 @@ mod tests {
         assert_eq!(items[0].id, "b");
         assert!(delete_item(&mut items, "c"));
         assert!(items[0].children.as_ref().unwrap().is_empty());
+    }
+
+    #[test]
+    fn add_request_to_collection_root_and_folder_roundtrip() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        let dir = tempdir().unwrap();
+        set_test_root(Some(dir.path().to_path_buf()));
+
+        let mut col = Collection {
+            id: "col-add".into(),
+            name: "AddTest".into(),
+            version: "1.0".into(),
+            items: vec![CollectionItem {
+                id: "folder1".into(),
+                item_type: "folder".into(),
+                name: "Folder".into(),
+                children: Some(vec![]),
+                request: None,
+                scripts: None,
+            }],
+            scripts: None,
+            engine: None,
+        };
+        save_collection(&col).unwrap();
+
+        // root request
+        let id1 = uuid::Uuid::new_v4().to_string();
+        add_request_to_collection(&mut col, None, &id1, "Root Req").unwrap();
+        assert_eq!(col.items.len(), 2);
+        assert_eq!(col.items[1].item_type, "request");
+        assert!(col.items[1].request.is_some());
+
+        // folder request
+        let id2 = uuid::Uuid::new_v4().to_string();
+        add_request_to_collection(&mut col, Some("folder1"), &id2, "Nested Req").unwrap();
+        let folder = col.items.iter().find(|i| i.id == "folder1").unwrap();
+        assert_eq!(folder.children.as_ref().unwrap().len(), 1);
+        assert_eq!(folder.children.as_ref().unwrap()[0].name, "Nested Req");
+
+        save_collection(&col).unwrap();
+        let loaded = list_collections().unwrap();
+        let again = loaded.iter().find(|c| c.id == "col-add").unwrap();
+        assert_eq!(again.items.len(), 2);
+        let f = again.items.iter().find(|i| i.id == "folder1").unwrap();
+        assert_eq!(f.children.as_ref().unwrap()[0].id, id2);
+
+        // full save path
+        let (updated, rid) =
+            add_request_and_save("col-add", None, "ViaSave").unwrap();
+        assert_eq!(updated.items.len(), 3);
+        assert!(!rid.is_empty());
+        let reloaded = list_collections().unwrap();
+        let c = reloaded.iter().find(|c| c.id == "col-add").unwrap();
+        assert!(c.items.iter().any(|i| i.name == "ViaSave"));
+
+        set_test_root(None);
     }
 }

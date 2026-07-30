@@ -71,6 +71,24 @@ export async function deleteCollection(id: string): Promise<void> {
   return invoke("delete_collection", { id });
 }
 
+export interface AddRequestResult {
+  collection: Collection;
+  requestId: string;
+}
+
+/** Backend-persisted add request — single source of truth for the + button. */
+export async function addRequest(
+  collectionId: string,
+  parentId?: string | null,
+  name?: string,
+): Promise<AddRequestResult> {
+  return invoke("add_request", {
+    collectionId,
+    parentId: parentId ?? null,
+    name: name ?? "New Request",
+  });
+}
+
 export async function loadHistory(): Promise<HistoryEntry[]> {
   return invoke("load_history");
 }

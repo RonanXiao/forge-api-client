@@ -8,10 +8,11 @@
     selectedId: string | null;
     workspacePath: string;
     onselect: (collectionId: string, item: CollectionItem) => void;
-    onnewRequest: (collectionId: string, parentId?: string | null) => void;
-    onnewFolder: (collectionId: string) => void;
-    onnewCollection: () => void;
-    ondeleteCollection: (id: string) => void;
+    /** Avoid on* prop names — Svelte can treat them oddly as event handlers */
+    addRequest: (collectionId: string, parentId?: string | null) => void;
+    addFolder: (collectionId: string) => void;
+    addCollection: () => void;
+    removeCollection: (id: string) => void;
     onrename: (collectionId: string, itemId: string, name: string) => void;
     ondeleteItem: (collectionId: string, itemId: string) => void;
     onreorder: (
@@ -30,10 +31,10 @@
     selectedId,
     workspacePath,
     onselect,
-    onnewRequest,
-    onnewFolder,
-    onnewCollection,
-    ondeleteCollection,
+    addRequest,
+    addFolder,
+    addCollection,
+    removeCollection,
     onrename,
     ondeleteItem,
     onreorder,
@@ -92,7 +93,7 @@
         <span class="text-[11px] font-semibold uppercase tracking-wider text-neutral-500"
           >Local</span
         >
-        <button type="button" class="icon-btn text-xs" onclick={onnewCollection}
+        <button type="button" class="icon-btn text-xs" onclick={() => addCollection()}
           >+ New</button
         >
       </div>
@@ -122,11 +123,12 @@
             >
             <button
               type="button"
-              class="icon-btn inline-flex shrink-0 text-[13px] font-semibold text-[#FF6C37]"
+              class="icon-btn inline-flex shrink-0 px-1.5 text-[15px] font-bold text-[#FF6C37]"
               title="New request"
               onclick={(e) => {
+                e.preventDefault();
                 e.stopPropagation();
-                onnewRequest(col.id);
+                addRequest(col.id);
               }}>+</button
             >
             <button
@@ -134,8 +136,9 @@
               class="icon-btn inline-flex shrink-0 text-[11px]"
               title="New folder"
               onclick={(e) => {
+                e.preventDefault();
                 e.stopPropagation();
-                onnewFolder(col.id);
+                addFolder(col.id);
               }}>📁</button
             >
             <button
@@ -143,8 +146,9 @@
               class="icon-btn inline-flex shrink-0 text-[11px] text-rose-500"
               title="Delete collection"
               onclick={(e) => {
+                e.preventDefault();
                 e.stopPropagation();
-                ondeleteCollection(col.id);
+                removeCollection(col.id);
               }}>×</button
             >
           </div>
@@ -236,11 +240,12 @@
           <span class="min-w-0 flex-1 truncate text-xs text-neutral-700 dark:text-neutral-300">📁 {item.name}</span>
           <button
             type="button"
-            class="icon-btn inline-flex shrink-0 text-[12px] font-semibold text-[#FF6C37]"
+            class="icon-btn inline-flex shrink-0 px-1 text-[13px] font-bold text-[#FF6C37]"
             title="New request in folder"
             onclick={(e) => {
+              e.preventDefault();
               e.stopPropagation();
-              onnewRequest(collectionId, item.id);
+              addRequest(collectionId, item.id);
             }}>+</button
           >
           <button
