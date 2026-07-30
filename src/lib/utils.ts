@@ -1,10 +1,94 @@
 import type {
   AuthConfig,
+  BodyType,
   HttpMethod,
   HttpRequest,
   KeyValue,
+  RawLanguage,
+  RequestBody,
   ScriptBlock,
 } from "./types";
+
+const RAW_LANGUAGES: RawLanguage[] = [
+  "text",
+  "javascript",
+  "json",
+  "html",
+  "xml",
+];
+
+/**
+ * Normalize body type to Postman modes.
+ * Legacy: json → raw+json, form → urlencoded, multipart/formdata → form-data.
+ */
+export function normalizeBody(body: {
+  type?: string | null;
+  content?: string | null;
+  language?: string | null;
+}): RequestBody {
+  const rawType = (body.type ?? "none").toLowerCase().trim();
+  const content = body.content ?? "";
+  let type: BodyType;
+  let language: RawLanguage | null | undefined = undefined;
+
+  switch (rawType) {
+    case "form-data":
+    case "formdata":
+    case "multipart":
+      type = "form-data";
+      break;
+    case "urlencoded":
+    case "x-www-form-urlencoded":
+    case "form":
+      type = "urlencoded";
+      break;
+    case "json":
+      type = "raw";
+      language = "json";
+      break;
+    case "raw":
+      type = "raw";
+      break;
+    case "binary":
+    case "file":
+      type = "binary";
+      break;
+    case "none":
+    case "":
+      type = "none";
+      break;
+    default:
+      type = "raw";
+  }
+
+  if (type === "raw") {
+    const lang = (body.language ?? language ?? "text").toLowerCase();
+    language = (RAW_LANGUAGES as string[]).includes(lang)
+      ? (lang as RawLanguage)
+      : "text";
+  } else {
+    language = null;
+  }
+
+  return { type, content, language };
+}
+
+export function isFormBodyType(type: string | undefined | null): boolean {
+  const t = (type ?? "").toLowerCase();
+  return (
+    t === "form-data" ||
+    t === "formdata" ||
+    t === "multipart" ||
+    t === "urlencoded" ||
+    t === "x-www-form-urlencoded" ||
+    t === "form"
+  );
+}
+
+export function isMultipartBodyType(type: string | undefined | null): boolean {
+  const t = (type ?? "").toLowerCase();
+  return t === "form-data" || t === "formdata" || t === "multipart";
+}
 
 export const METHODS: HttpMethod[] = [
   "GET",
@@ -104,7 +188,7 @@ export function createEmptyRequest(
     url: "https://httpbin.org/get",
     headers: [],
     query: [],
-    body: { type: "none", content: "" },
+    body: { type: "none", content: "", language: null },
     auth: emptyAuth(),
     config: {
       timeoutMs: 30000,

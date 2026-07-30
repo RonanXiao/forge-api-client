@@ -27,10 +27,112 @@ impl KeyValue {
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct RequestBody {
+    /// Postman modes: none | form-data | urlencoded | raw | binary
+    /// Legacy aliases also accepted: json | form | multipart | formdata
     #[serde(rename = "type")]
-    pub body_type: String, // none | json | form | raw | multipart | binary
+    pub body_type: String,
     #[serde(default)]
     pub content: String,
+    /// Raw language subtype (Postman): text | javascript | json | html | xml
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub language: Option<String>,
+}
+
+impl RequestBody {
+    pub fn none() -> Self {
+        Self {
+            body_type: "none".into(),
+            content: String::new(),
+            language: None,
+        }
+    }
+
+    pub fn with(body_type: impl Into<String>, content: impl Into<String>) -> Self {
+        Self {
+            body_type: body_type.into(),
+            content: content.into(),
+            language: None,
+        }
+    }
+
+    pub fn with_language(
+        body_type: impl Into<String>,
+        content: impl Into<String>,
+        language: impl Into<String>,
+    ) -> Self {
+        Self {
+            body_type: body_type.into(),
+            content: content.into(),
+            language: Some(language.into()),
+        }
+    }
+
+    /// Canonical Postman body mode for HTTP send / codegen.
+    /// Returns: none | form-data | urlencoded | raw | binary
+    /// Special: "json" when type is legacy json or raw+language=json (for Content-Type).
+    pub fn send_mode(&self) -> &'static str {
+        let t = self.body_type.to_lowercase();
+        match t.as_str() {
+            "form-data" | "formdata" | "multipart" => "form-data",
+            "urlencoded" | "x-www-form-urlencoded" | "form" => "urlencoded",
+            "json" => "json",
+            "raw" => {
+                if self
+                    .language
+                    .as_deref()
+                    .map(|l| l.eq_ignore_ascii_case("json"))
+                    .unwrap_or(false)
+                {
+                    "json"
+                } else {
+                    "raw"
+                }
+            }
+            "binary" | "file" => "binary",
+            "none" | "" => "none",
+            _ => "raw",
+        }
+    }
+
+    /// Normalize legacy type names to Postman storage format.
+    pub fn normalize(mut self) -> Self {
+        let t = self.body_type.to_lowercase();
+        match t.as_str() {
+            "multipart" | "formdata" => {
+                self.body_type = "form-data".into();
+                self.language = None;
+            }
+            "form" | "x-www-form-urlencoded" => {
+                self.body_type = "urlencoded".into();
+                self.language = None;
+            }
+            "json" => {
+                self.body_type = "raw".into();
+                if self.language.is_none() {
+                    self.language = Some("json".into());
+                }
+            }
+            "file" => {
+                self.body_type = "binary".into();
+                self.language = None;
+            }
+            "raw" => {
+                if self.language.is_none() {
+                    self.language = Some("text".into());
+                }
+            }
+            "form-data" | "urlencoded" | "binary" | "none" => {
+                if self.body_type != t {
+                    self.body_type = t;
+                }
+                if self.body_type != "raw" {
+                    self.language = None;
+                }
+            }
+            _ => {}
+        }
+        self
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -114,6 +216,7 @@ impl Default for HttpRequest {
             body: RequestBody {
                 body_type: "none".into(),
                 content: String::new(),
+                language: None,
             },
             auth: AuthConfig {
                 auth_type: "none".into(),
@@ -313,6 +416,9 @@ pub struct HttpResponse {
     pub body_size: u64,
     pub duration_ms: u64,
     pub content_type: Option<String>,
+    /// curl -v style debug trace (connect, request, response headers, timing)
+    #[serde(default)]
+    pub verbose: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

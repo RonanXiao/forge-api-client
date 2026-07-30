@@ -63,7 +63,7 @@ pub fn generate_fetch(input: &CodegenInput) -> String {
     header_obj.push_str("  }");
 
     let method = input.method.to_uppercase();
-    let body_js = match input.body.body_type.to_lowercase().as_str() {
+    let body_js = match input.body.send_mode() {
         "none" | "" => "undefined".into(),
         "json" => format!(
             "JSON.stringify({})",
@@ -73,6 +73,18 @@ pub fn generate_fetch(input: &CodegenInput) -> String {
                 input.body.content.clone()
             }
         ),
+        "urlencoded" | "form-data" => {
+            // Prefer raw content string for codegen simplicity
+            format!(
+                "`{}`",
+                input
+                    .body
+                    .content
+                    .replace('\\', "\\\\")
+                    .replace('`', "\\`")
+                    .replace('$', "\\$")
+            )
+        }
         _ => format!(
             "`{}`",
             input
@@ -106,12 +118,8 @@ pub fn generate_python(input: &CodegenInput) -> String {
     header_lines.push_str("}");
 
     let method = input.method.to_lowercase();
-    let body_py = match input.body.body_type.to_lowercase().as_str() {
+    let body_py = match input.body.send_mode() {
         "none" | "" => "None".into(),
-        "json" => format!(
-            "'''{}'''",
-            input.body.content.replace('\\', "\\\\").replace('\'', "\\'")
-        ),
         _ => format!(
             "'''{}'''",
             input.body.content.replace('\\', "\\\\").replace('\'', "\\'")
@@ -141,10 +149,7 @@ mod tests {
             url: "https://api.example.com/items".into(),
             headers: vec![KeyValue::new("Accept", "application/json")],
             query: vec![KeyValue::new("page", "1")],
-            body: RequestBody {
-                body_type: "json".into(),
-                content: r#"{"a":1}"#.into(),
-            },
+            body: RequestBody::with_language("raw", r#"{"a":1}"#, "json"),
             auth: AuthConfig {
                 auth_type: "bearer".into(),
                 token: "t".into(),

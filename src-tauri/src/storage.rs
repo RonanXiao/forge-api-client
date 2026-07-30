@@ -254,6 +254,7 @@ pub fn make_request_item(id: &str, name: &str) -> CollectionItemMut {
             body: crate::models::RequestBody {
                 body_type: "none".into(),
                 content: String::new(),
+                language: None,
             },
             auth: crate::models::AuthConfig {
                 auth_type: "none".into(),
@@ -328,6 +329,10 @@ pub fn rename_item(items: &mut [CollectionItemMut], id: &str, name: &str) -> boo
     for item in items.iter_mut() {
         if item.id == id {
             item.name = name.to_string();
+            // Keep embedded request name in sync with tree label
+            if let Some(ref mut req) = item.request {
+                req.name = name.to_string();
+            }
             return true;
         }
         if let Some(ref mut children) = item.children {

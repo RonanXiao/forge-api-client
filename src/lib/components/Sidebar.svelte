@@ -268,55 +268,82 @@
         </ul>
       {/if}
     {:else if item.request}
-      <div class="flex items-center">
-        <button
-          type="button"
-          class="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition
-            {selectedId === item.id
-            ? 'bg-[#FF6C37]/12 text-neutral-900 dark:text-white'
-            : 'text-neutral-700 dark:text-neutral-300 hover:bg-neutral-100 dark:bg-neutral-800/50'}"
-          onclick={() => onselect(collectionId, item)}
-          ondblclick={() => startRename(item.id, item.name)}
-        >
+      {@const displayName = item.request.name || item.name}
+      <div
+        class="flex items-center gap-0.5 rounded-md
+          {selectedId === item.id
+          ? 'bg-[#FF6C37]/12 text-neutral-900 dark:text-white'
+          : 'text-neutral-700 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-800/50'}"
+      >
+        {#if editingId === item.id}
           <span
-            class="w-12 shrink-0 font-mono text-[10px] font-bold {METHOD_COLORS[
+            class="w-12 shrink-0 pl-2 font-mono text-[10px] font-bold {METHOD_COLORS[
               item.request.method
             ] ?? 'text-neutral-500 dark:text-neutral-400'}">{item.request.method}</span
           >
-          {#if editingId === item.id}
-            <input
-              class="input-field flex-1 py-0.5 text-xs"
-              bind:value={editName}
-              onclick={(e) => e.stopPropagation()}
-              onkeydown={(e) => e.key === "Enter" && commitRename(collectionId, item.id)}
-              onblur={() => commitRename(collectionId, item.id)}
-            />
-          {:else}
-            <span class="truncate">{item.name}</span>
+          <input
+            class="input-field m-0.5 min-w-0 flex-1 py-1 text-xs"
+            bind:value={editName}
+            autofocus
+            onfocus={(e) => e.currentTarget.select()}
+            onkeydown={(e) => {
+              if (e.key === "Enter") commitRename(collectionId, item.id);
+              if (e.key === "Escape") editingId = null;
+            }}
+            onblur={() => commitRename(collectionId, item.id)}
+          />
+        {:else}
+          <button
+            type="button"
+            class="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left text-sm transition"
+            onclick={() => onselect(collectionId, item)}
+            ondblclick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              startRename(item.id, displayName);
+            }}
+          >
+            <span
+              class="w-12 shrink-0 font-mono text-[10px] font-bold {METHOD_COLORS[
+                item.request.method
+              ] ?? 'text-neutral-500 dark:text-neutral-400'}">{item.request.method}</span
+            >
+            <span class="truncate" title="Double-click to rename">{displayName}</span>
+          </button>
+          <button
+            type="button"
+            class="icon-btn hidden text-[10px] group-hover:inline-flex"
+            title="Rename"
+            onclick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              startRename(item.id, displayName);
+            }}>✎</button
+          >
+          <button
+            type="button"
+            class="icon-btn hidden text-[10px] text-rose-400 group-hover:inline-flex"
+            title="Delete"
+            onclick={() => ondeleteItem(collectionId, item.id)}>×</button
+          >
+          {#if index > 0}
+            <button
+              type="button"
+              class="icon-btn hidden text-[10px] group-hover:inline-flex"
+              title="Move up"
+              onclick={() => onreorder(collectionId, parentId, item.id, index - 1)}
+              >↑</button
+            >
           {/if}
-        </button>
-        <button
-          type="button"
-          class="icon-btn hidden text-[10px] text-rose-400 group-hover:inline-flex"
-          onclick={() => ondeleteItem(collectionId, item.id)}>×</button
-        >
-        {#if index > 0}
-          <button
-            type="button"
-            class="icon-btn hidden text-[10px] group-hover:inline-flex"
-            title="Move up"
-            onclick={() => onreorder(collectionId, parentId, item.id, index - 1)}
-            >↑</button
-          >
-        {/if}
-        {#if index < siblingCount - 1}
-          <button
-            type="button"
-            class="icon-btn hidden text-[10px] group-hover:inline-flex"
-            title="Move down"
-            onclick={() => onreorder(collectionId, parentId, item.id, index + 1)}
-            >↓</button
-          >
+          {#if index < siblingCount - 1}
+            <button
+              type="button"
+              class="icon-btn hidden text-[10px] group-hover:inline-flex"
+              title="Move down"
+              onclick={() => onreorder(collectionId, parentId, item.id, index + 1)}
+              >↓</button
+            >
+          {/if}
         {/if}
       </div>
     {/if}

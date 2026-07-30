@@ -227,16 +227,22 @@ fn is_mostly_binary(s: &str) -> bool {
     non_print * 4 > s.chars().count()
 }
 
-/// Convert raw multipart body content into JSON field storage if applicable.
+/// Convert raw form/multipart body content into JSON field storage if applicable.
+/// Returns canonical Postman type: form-data | urlencoded
 pub fn normalize_body_content(body_type: &str, content: &str) -> (String, String) {
     let bt = body_type.to_lowercase();
-    if bt == "multipart" || bt == "form" {
+    let canonical = match bt.as_str() {
+        "multipart" | "formdata" | "form-data" => "form-data",
+        "form" | "urlencoded" | "x-www-form-urlencoded" => "urlencoded",
+        other => other,
+    };
+    if canonical == "form-data" || canonical == "urlencoded" {
         let fields = parse_form_fields(content);
         if !fields.is_empty() {
-            return (bt, fields_to_json(&fields));
+            return (canonical.to_string(), fields_to_json(&fields));
         }
     }
-    (body_type.to_string(), content.to_string())
+    (canonical.to_string(), content.to_string())
 }
 
 #[cfg(test)]

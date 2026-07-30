@@ -1,14 +1,20 @@
 <script lang="ts">
   import { onMount } from "svelte";
   import { importCurl } from "$lib/api";
-  import type { BodyType, EditorTab, HttpRequest } from "$lib/types";
+  import type {
+    BodyType,
+    EditorTab,
+    HttpRequest,
+    RawLanguage,
+  } from "$lib/types";
   import {
     emptyAuth,
-    emptyKeyValue,
     emptyScripts,
     fieldsToBodyContent,
+    isFormBodyType,
     looksLikeCurl,
     METHODS,
+    normalizeBody,
     parseBodyFields,
   } from "$lib/utils";
   import KeyValueEditor from "./KeyValueEditor.svelte";
@@ -39,22 +45,40 @@
   let scriptTab = $state<"pre" | "post">("pre");
   let pasteHint = $state<string | null>(null);
 
-  // Postman-style form-data rows derived from body.content
+  // Normalize legacy body types (json/form/multipart) to Postman modes
+  let body = $derived(normalizeBody(request.body));
+
+  // form-data / x-www-form-urlencoded rows from body.content
   let formRows = $derived.by((): KeyValue[] => {
-    if (request.body.type === "form" || request.body.type === "multipart") {
-      return parseBodyFields(request.body.content);
+    if (isFormBodyType(body.type)) {
+      return parseBodyFields(body.content);
     }
     return [];
   });
 
   const bodyTypes: { id: BodyType; label: string }[] = [
     { id: "none", label: "none" },
-    { id: "form", label: "form-data" },
-    { id: "multipart", label: "multipart" },
-    { id: "json", label: "JSON" },
+    { id: "form-data", label: "form-data" },
+    { id: "urlencoded", label: "x-www-form-urlencoded" },
     { id: "raw", label: "raw" },
     { id: "binary", label: "binary" },
   ];
+
+  const rawLanguages: { id: RawLanguage; label: string }[] = [
+    { id: "text", label: "Text" },
+    { id: "javascript", label: "JavaScript" },
+    { id: "json", label: "JSON" },
+    { id: "html", label: "HTML" },
+    { id: "xml", label: "XML" },
+  ];
+
+  function rawEditorLang(
+    lang: RawLanguage | null | undefined,
+  ): "json" | "javascript" | "text" {
+    if (lang === "json") return "json";
+    if (lang === "javascript") return "javascript";
+    return "text";
+  }
 
   function patch(partial: Partial<HttpRequest>) {
     onchange({ ...request, ...partial });
@@ -94,12 +118,15 @@
         url: parsed.url || "",
         headers: realKvRows(parsed.headers),
         query: realKvRows(parsed.query),
-        body: parsed.body ?? { type: "none", content: "" },
+        body: normalizeBody(parsed.body ?? { type: "none", content: "" }),
         auth,
         config: parsed.config ?? request.config,
         scripts: parsed.scripts ?? request.scripts ?? emptyScripts(),
       });
-      if (parsed.body?.type && parsed.body.type !== "none") {
+      const importedBody = normalizeBody(
+        parsed.body ?? { type: "none", content: "" },
+      );
+      if (importedBody.type !== "none") {
         tab = "body";
       } else if (parsed.headers?.some((h) => h.key)) {
         tab = "headers";
@@ -131,7 +158,32 @@
 </script>
 
 <div class="flex h-full min-h-0 flex-col">
-  <div class="flex items-center gap-2 border-b border-app p-3">
+  <div class="flex items-center gap-2 border-b border-app px-3 pt-3 pb-1">
+    <input
+      class="input-ghost min-w-0 flex-1 rounded px-1 text-base font-semibold tracking-tight hover:bg-neutral-50 focus:bg-neutral-50 focus:ring-1 focus:ring-[#FF6C37]/40 dark:hover:bg-neutral-800/50 dark:focus:bg-neutral-800/50"
+      placeholder="Request name"
+      title="Edit request name"
+      aria-label="Request name"
+      value={request.name}
+      oninput={(e) => patch({ name: e.currentTarget.value })}
+      onblur={(e) => {
+        const n = e.currentTarget.value.trim();
+        if (n && n !== request.name) patch({ name: n });
+        else if (!n) patch({ name: request.name || "New Request" });
+      }}
+    />
+    {#if pasteHint}
+      <span class="text-[11px] font-medium text-[#FF6C37]">{pasteHint}</span>
+    {/if}
+    <div class="flex shrink-0 gap-1">
+      <button type="button" class="chip" onclick={() => oncodegen?.("curl")}>cURL</button>
+      <button type="button" class="chip" onclick={() => oncodegen?.("fetch")}>JS</button>
+      <button type="button" class="chip" onclick={() => oncodegen?.("python")}>Python</button>
+    </div>
+    <span class="shrink-0 text-[11px] text-neutral-500">⌘/Ctrl + Enter</span>
+  </div>
+
+  <div class="flex items-center gap-2 border-b border-app px-3 pb-3 pt-1">
     <select
       class="input-field w-[110px] shrink-0 font-mono text-sm font-semibold"
       value={request.method}
@@ -157,24 +209,6 @@
     >
       {sending ? "Sending…" : "Send"}
     </button>
-  </div>
-
-  <div class="flex items-center gap-2 border-b border-app px-3 py-2">
-    <input
-      class="input-ghost min-w-0 flex-1 text-sm font-medium"
-      placeholder="Request name"
-      value={request.name}
-      oninput={(e) => patch({ name: e.currentTarget.value })}
-    />
-    {#if pasteHint}
-      <span class="text-[11px] font-medium text-[#FF6C37]">{pasteHint}</span>
-    {/if}
-    <div class="flex gap-1">
-      <button type="button" class="chip" onclick={() => oncodegen?.("curl")}>cURL</button>
-      <button type="button" class="chip" onclick={() => oncodegen?.("fetch")}>JS</button>
-      <button type="button" class="chip" onclick={() => oncodegen?.("python")}>Python</button>
-    </div>
-    <span class="text-[11px] text-neutral-500">⌘/Ctrl + Enter</span>
   </div>
 
   <div class="flex flex-wrap items-center gap-1 border-b border-app px-3">
@@ -216,39 +250,38 @@
         {#each bodyTypes as bt}
           <button
             type="button"
-            class="chip {request.body.type === bt.id ? 'chip-active' : ''}"
+            class="chip {body.type === bt.id ? 'chip-active' : ''}"
             onclick={() => {
-              let content = request.body.content;
-              if (bt.id === "json" && (!content || content.startsWith("["))) {
-                content = "{\n  \n}";
+              let content = body.content;
+              let language = body.language ?? null;
+              if (bt.id === "raw") {
+                if (!content || content.startsWith("[")) {
+                  content = language === "json" || !language ? "{\n  \n}" : "";
+                  language = language ?? "json";
+                } else {
+                  language = language ?? "text";
+                }
               } else if (
-                (bt.id === "form" || bt.id === "multipart") &&
-                (!content || content.startsWith("{"))
+                (bt.id === "form-data" || bt.id === "urlencoded") &&
+                (!content || (!content.trim().startsWith("[") && content.trim().startsWith("{")))
               ) {
                 content = "[]";
+                language = null;
+              } else if (bt.id === "none" || bt.id === "binary") {
+                language = null;
               }
-              patch({ body: { ...request.body, type: bt.id, content } });
+              patch({
+                body: { type: bt.id, content, language },
+              });
             }}
           >
             {bt.label}
           </button>
         {/each}
       </div>
-      {#if request.body.type === "none"}
+      {#if body.type === "none"}
         <p class="py-8 text-center text-sm text-neutral-500">This request has no body.</p>
-      {:else if request.body.type === "json"}
-        <CodeEditor
-          value={request.body.content}
-          language="json"
-          {dark}
-          onchange={(content) => patch({ body: { ...request.body, content } })}
-        />
-      {:else if request.body.type === "form" || request.body.type === "multipart"}
-        <p class="mb-2 text-[11px] text-neutral-500">
-          {request.body.type === "multipart"
-            ? "form-data — Key / Value (like Postman)"
-            : "x-www-form-urlencoded — Key / Value"}
-        </p>
+      {:else if body.type === "form-data" || body.type === "urlencoded"}
         <KeyValueEditor
           items={formRows}
           keyPlaceholder="Key"
@@ -256,20 +289,66 @@
           onchange={(fields) =>
             patch({
               body: {
-                ...request.body,
+                type: body.type,
                 content: fieldsToBodyContent(fields),
+                language: null,
               },
             })}
         />
-      {:else}
+      {:else if body.type === "raw"}
+        <div class="mb-2 flex flex-wrap items-center gap-1">
+          <span class="mr-1 text-[11px] text-neutral-500">Language</span>
+          {#each rawLanguages as rl}
+            <button
+              type="button"
+              class="chip { (body.language ?? 'text') === rl.id ? 'chip-active' : '' }"
+              onclick={() => {
+                let content = body.content;
+                if (
+                  rl.id === "json" &&
+                  (!content.trim() || content.trim() === "[]")
+                ) {
+                  content = "{\n  \n}";
+                }
+                patch({
+                  body: {
+                    type: "raw",
+                    content,
+                    language: rl.id,
+                  },
+                });
+              }}
+            >
+              {rl.label}
+            </button>
+          {/each}
+        </div>
+        <CodeEditor
+          value={body.content}
+          language={rawEditorLang(body.language)}
+          {dark}
+          onchange={(content) =>
+            patch({
+              body: {
+                type: "raw",
+                content,
+                language: body.language ?? "text",
+              },
+            })}
+        />
+      {:else if body.type === "binary"}
         <textarea
           class="input-field min-h-[220px] w-full resize-y font-mono text-xs leading-relaxed"
-          placeholder={request.body.type === "binary"
-            ? "Base64-encoded content"
-            : "Request body"}
-          value={request.body.content}
+          placeholder="Base64-encoded content"
+          value={body.content}
           oninput={(e) =>
-            patch({ body: { ...request.body, content: e.currentTarget.value } })}
+            patch({
+              body: {
+                type: "binary",
+                content: e.currentTarget.value,
+                language: null,
+              },
+            })}
         ></textarea>
       {/if}
     {:else if tab === "auth"}

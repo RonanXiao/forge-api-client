@@ -75,6 +75,7 @@
 
     <div class="ml-auto flex items-center gap-1">
       {#each [
+        ["verbose", "Verbose"],
         ["body", "Body"],
         ["headers", "Headers"],
         ["tests", "Tests"],
@@ -90,9 +91,9 @@
   </div>
 
   <div class="flex min-h-0 flex-1 flex-col overflow-hidden p-3">
-    {#if error}
+    {#if error && tab !== "verbose"}
       <div
-        class="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 font-mono text-sm text-rose-600 dark:text-rose-300"
+        class="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 font-mono text-sm text-rose-600 dark:text-rose-300 whitespace-pre-wrap"
       >
         {error}
       </div>
@@ -105,6 +106,42 @@
           <span class="text-sm">Sending request…</span>
         </div>
       </div>
+    {:else if tab === "verbose"}
+      {#if error}
+        <pre
+          class="min-h-0 flex-1 overflow-auto rounded-md border border-app bg-white p-3 font-mono text-[12px] leading-relaxed text-rose-600 whitespace-pre-wrap dark:bg-neutral-900 dark:text-rose-300"
+          >{error}</pre
+        >
+      {:else if response?.verbose}
+        <div class="mb-2 flex items-center gap-2">
+          <span class="text-[11px] text-neutral-500"
+            >curl -v style trace (connection · request · response)</span
+          >
+          <button
+            type="button"
+            class="chip ml-auto"
+            onclick={() => {
+              void navigator.clipboard.writeText(response?.verbose ?? "");
+            }}>Copy</button
+          >
+        </div>
+        <pre
+          class="min-h-0 flex-1 overflow-auto rounded-md border border-app bg-white p-3 font-mono text-[12px] leading-relaxed whitespace-pre-wrap dark:bg-neutral-900"
+          >{#each (response.verbose ?? "").split("\n") as line}{#if line.startsWith("*")}<span
+                class="text-neutral-400 dark:text-neutral-500">{line}</span
+              >{"\n"}{:else if line.startsWith(">")}<span
+                class="text-emerald-600 dark:text-emerald-400">{line}</span
+              >{"\n"}{:else if line.startsWith("<")}<span
+                class="text-amber-600 dark:text-amber-300">{line}</span
+              >{"\n"}{:else}<span class="text-neutral-700 dark:text-neutral-300"
+                >{line}</span
+              >{"\n"}{/if}{/each}</pre
+        >
+      {:else}
+        <p class="text-sm text-neutral-500">
+          Send a request to see verbose debug output (like curl -v).
+        </p>
+      {/if}
     {:else if tab === "console"}
       {#if logs.length === 0}
         <p class="text-sm text-neutral-500">No script logs.</p>

@@ -22,10 +22,7 @@ pub fn parse_curl(input: &str) -> Result<HttpRequest, String> {
     let mut method_explicit = false;
     let mut url = String::new();
     let mut headers: Vec<KeyValue> = vec![];
-    let mut body = RequestBody {
-        body_type: "none".into(),
-        content: String::new(),
-    };
+    let mut body = RequestBody::none();
     let mut auth = AuthConfig {
         auth_type: "none".into(),
         ..Default::default()
@@ -69,7 +66,8 @@ pub fn parse_curl(input: &str) -> Result<HttpRequest, String> {
             "--json" => {
                 i += 1;
                 if i < tokens.len() {
-                    body.body_type = "json".into();
+                    body.body_type = "raw".into();
+                    body.language = Some("json".into());
                     body.content = tokens[i].clone();
                     if !headers_contain(&headers, "content-type") {
                         headers.push(KeyValue::new("Content-Type", "application/json"));
@@ -133,11 +131,15 @@ pub fn parse_curl(input: &str) -> Result<HttpRequest, String> {
             | "--write-out" | "--proxy" | "-x" | "--cacert" | "--cert" | "--key"
             | "--resolve" | "-E" | "--form" | "-F" => {
                 i += 1;
-                // -F form: treat as multipart field if possible
+                // -F form: treat as form-data field if possible
                 if (t == "--form" || t == "-F") && i < tokens.len() {
                     let field = &tokens[i];
-                    if body.body_type == "none" || body.body_type == "multipart" {
-                        body.body_type = "multipart".into();
+                    if body.body_type == "none"
+                        || body.body_type == "form-data"
+                        || body.body_type == "multipart"
+                    {
+                        body.body_type = "form-data".into();
+                        body.language = None;
                         if !body.content.is_empty() {
                             body.content.push('\n');
                         }
@@ -190,41 +192,50 @@ pub fn parse_curl(input: &str) -> Result<HttpRequest, String> {
         return Err("No URL found in cURL".into());
     }
 
-    // Infer multipart from content-type header
+    // Infer body mode from content-type header
     if body.body_type == "raw" || body.body_type == "none" {
         if let Some(ct) = headers
             .iter()
             .find(|h| h.key.eq_ignore_ascii_case("content-type"))
         {
             if ct.value.to_lowercase().contains("multipart/form-data") {
-                body.body_type = "multipart".into();
+                body.body_type = "form-data".into();
+                body.language = None;
             } else if ct.value.to_lowercase().contains("application/x-www-form-urlencoded") {
-                body.body_type = "form".into();
+                body.body_type = "urlencoded".into();
+                body.language = None;
             } else if ct.value.to_lowercase().contains("application/json")
                 && body.body_type == "raw"
             {
-                body.body_type = "json".into();
+                body.body_type = "raw".into();
+                body.language = Some("json".into());
             }
         }
     }
 
     // Parse raw multipart → structured form fields (Postman-style key/value storage)
-    if body.body_type == "multipart"
+    if body.body_type == "form-data"
+        || body.body_type == "multipart"
         || body.content.contains("Content-Disposition: form-data")
         || body.content.contains("WebKitFormBoundary")
     {
-        body.body_type = "multipart".into();
+        body.body_type = "form-data".into();
+        body.language = None;
         let (bt, content) =
-            crate::form_fields::normalize_body_content("multipart", &body.content);
+            crate::form_fields::normalize_body_content("form-data", &body.content);
         body.body_type = bt;
         body.content = content;
-        // Drop client Content-Type with boundary — reqwest sets its own when sending multipart
+        // Drop client Content-Type with boundary — reqwest sets its own when sending form-data
         headers.retain(|h| !h.key.eq_ignore_ascii_case("content-type"));
-    } else if body.body_type == "form" {
-        let (bt, content) = crate::form_fields::normalize_body_content("form", &body.content);
+    } else if body.body_type == "urlencoded" || body.body_type == "form" {
+        let (bt, content) =
+            crate::form_fields::normalize_body_content("urlencoded", &body.content);
         body.body_type = bt;
         body.content = content;
+        body.language = None;
     }
+
+    body = body.normalize();
 
     let mut query = vec![];
     if let Some((base, qs)) = url.split_once('?') {
@@ -306,16 +317,20 @@ fn set_body_from_data(body: &mut RequestBody, content: &str, flag: &str) {
     let trimmed = content.trim();
     body.content = content.to_string();
     if flag.contains("urlencode") {
-        body.body_type = "form".into();
-    } else if trimmed.starts_with('{') || trimmed.starts_with('[') {
-        body.body_type = "json".into();
+        body.body_type = "urlencoded".into();
+        body.language = None;
     } else if content.contains("Content-Disposition: form-data")
         || content.contains("WebKitFormBoundary")
         || content.contains("------")
     {
-        body.body_type = "multipart".into();
+        body.body_type = "form-data".into();
+        body.language = None;
+    } else if trimmed.starts_with('{') || trimmed.starts_with('[') {
+        body.body_type = "raw".into();
+        body.language = Some("json".into());
     } else {
         body.body_type = "raw".into();
+        body.language = Some("text".into());
     }
 }
 
@@ -567,10 +582,7 @@ fn extract_postman_url(url_v: Option<&Value>) -> String {
 
 fn extract_postman_body(body_v: Option<&Value>) -> RequestBody {
     let Some(b) = body_v else {
-        return RequestBody {
-            body_type: "none".into(),
-            content: String::new(),
-        };
+        return RequestBody::none();
     };
     let mode = b.get("mode").and_then(|m| m.as_str()).unwrap_or("raw");
     match mode {
@@ -586,14 +598,15 @@ fn extract_postman_body(body_v: Option<&Value>) -> RequestBody {
                 .and_then(|r| r.get("language"))
                 .and_then(|l| l.as_str())
                 .unwrap_or("");
-            RequestBody {
-                body_type: if lang == "json" || content.trim_start().starts_with('{') {
-                    "json".into()
-                } else {
-                    "raw".into()
-                },
-                content,
-            }
+            let language = if !lang.is_empty() {
+                lang.to_string()
+            } else if content.trim_start().starts_with('{') || content.trim_start().starts_with('[')
+            {
+                "json".into()
+            } else {
+                "text".into()
+            };
+            RequestBody::with_language("raw", content, language)
         }
         "urlencoded" => {
             let pairs = b
@@ -612,10 +625,7 @@ fn extract_postman_body(body_v: Option<&Value>) -> RequestBody {
                         .join("\n")
                 })
                 .unwrap_or_default();
-            RequestBody {
-                body_type: "form".into(),
-                content: pairs,
-            }
+            RequestBody::with("urlencoded", pairs)
         }
         "formdata" => {
             let pairs = b
@@ -634,15 +644,18 @@ fn extract_postman_body(body_v: Option<&Value>) -> RequestBody {
                         .join("\n")
                 })
                 .unwrap_or_default();
-            RequestBody {
-                body_type: "multipart".into(),
-                content: pairs,
-            }
+            RequestBody::with("form-data", pairs)
         }
-        _ => RequestBody {
-            body_type: "none".into(),
-            content: String::new(),
-        },
+        "file" => {
+            let content = b
+                .get("file")
+                .and_then(|f| f.get("src"))
+                .and_then(|s| s.as_str())
+                .unwrap_or("")
+                .to_string();
+            RequestBody::with("binary", content)
+        }
+        _ => RequestBody::none(),
     }
 }
 
@@ -709,7 +722,8 @@ mod tests {
         assert_eq!(req.method, "POST");
         assert_eq!(req.url, "https://httpbin.org/post");
         assert_eq!(req.query[0].key, "q");
-        assert_eq!(req.body.body_type, "json");
+        assert_eq!(req.body.body_type, "raw");
+        assert_eq!(req.body.language.as_deref(), Some("json"));
         assert!(req.headers.iter().any(|h| h.key == "Content-Type"));
     }
 
@@ -737,7 +751,7 @@ mod tests {
         let req = parse_curl(raw).unwrap();
         assert_eq!(req.method, "POST");
         assert_eq!(req.url, "http://10.12.105.185:20600/api/test");
-        assert_eq!(req.body.body_type, "multipart");
+        assert_eq!(req.body.body_type, "form-data");
         // Structured JSON fields — not raw boundary dump
         assert!(req.body.content.trim_start().starts_with('['), "{}", req.body.content);
         let fields = crate::form_fields::parse_form_fields(&req.body.content);

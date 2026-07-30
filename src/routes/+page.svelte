@@ -49,6 +49,7 @@
     emptyAuth,
     emptyKeyValue,
     emptyScripts,
+    normalizeBody,
     varsFromEnv,
   } from "$lib/utils";
 
@@ -182,6 +183,7 @@
       ...r,
       headers: (r.headers ?? []).filter((h) => h.key?.trim()),
       query: (r.query ?? []).filter((q) => q.key?.trim()),
+      body: normalizeBody(r.body ?? { type: "none", content: "" }),
       auth: r.auth ?? emptyAuth(),
       config: r.config ?? {
         timeoutMs: 30000,
@@ -226,6 +228,24 @@
   function onRequestChange(next: HttpRequest) {
     request = next;
     dirty = true;
+    // Live-sync name (and request) into the sidebar tree while typing
+    if (selectedCollectionId && selectedItemId) {
+      const colIdx = collections.findIndex((c) => c.id === selectedCollectionId);
+      if (colIdx >= 0) {
+        collections = collections.map((c, i) =>
+          i === colIdx
+            ? {
+                ...c,
+                items: updateItemInTree(c.items, selectedItemId!, (item) => ({
+                  ...item,
+                  name: next.name,
+                  request: next,
+                })),
+              }
+            : c,
+        );
+      }
+    }
     scheduleSave();
   }
 
@@ -574,12 +594,33 @@
   }
 
   async function handleRename(collectionId: string, itemId: string, name: string) {
+    const trimmed = name.trim();
+    if (!trimmed) return;
     const col = collections.find((c) => c.id === collectionId);
     if (!col) return;
-    const updated = await treeRename(col, itemId, name);
-    collections = collections.map((c) => (c.id === collectionId ? updated : c));
+    // Optimistic local sync so editor + sidebar update immediately
+    collections = collections.map((c) =>
+      c.id === collectionId
+        ? {
+            ...c,
+            items: updateItemInTree(c.items, itemId, (item) => ({
+              ...item,
+              name: trimmed,
+              request: item.request
+                ? { ...item.request, name: trimmed }
+                : item.request,
+            })),
+          }
+        : c,
+    );
     if (selectedItemId === itemId && request) {
-      request = { ...request, name };
+      request = { ...request, name: trimmed };
+    }
+    try {
+      const updated = await treeRename(col, itemId, trimmed);
+      collections = collections.map((c) => (c.id === collectionId ? updated : c));
+    } catch (e) {
+      console.error("Rename failed", e);
     }
   }
 
@@ -615,7 +656,7 @@
       url: r.url,
       headers: (r.headers ?? []).filter((h) => h.key?.trim()),
       query: (r.query ?? []).filter((q) => q.key?.trim()),
-      body: r.body ?? { type: "none", content: "" },
+      body: normalizeBody(r.body ?? { type: "none", content: "" }),
       auth: (r as { auth?: HttpRequest["auth"] }).auth ?? emptyAuth(),
       config: (r as { config?: HttpRequest["config"] }).config ?? {
         timeoutMs: 30000,

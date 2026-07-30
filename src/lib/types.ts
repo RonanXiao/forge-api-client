@@ -4,11 +4,22 @@ export interface KeyValue {
   enabled: boolean;
 }
 
-export type BodyType = "none" | "json" | "form" | "raw" | "multipart" | "binary";
+/** Postman body modes (legacy aliases: json, form, multipart are normalized on load). */
+export type BodyType =
+  | "none"
+  | "form-data"
+  | "urlencoded"
+  | "raw"
+  | "binary";
+
+/** Language subtype when body type is raw (Postman-style). */
+export type RawLanguage = "text" | "javascript" | "json" | "html" | "xml";
 
 export interface RequestBody {
   type: BodyType;
   content: string;
+  /** Only used when type === "raw". */
+  language?: RawLanguage | null;
 }
 
 export type HttpMethod =
@@ -95,6 +106,8 @@ export interface HttpResponse {
   bodySize: number;
   durationMs: number;
   contentType?: string | null;
+  /** curl -v style debug trace */
+  verbose?: string | null;
 }
 
 export interface HistoryEntry {
@@ -182,5 +195,5 @@ export interface SearchHit {
 }
 
 export type EditorTab = "params" | "headers" | "body" | "auth" | "scripts" | "settings";
-export type ResponseTab = "body" | "headers" | "tests" | "console";
+export type ResponseTab = "body" | "headers" | "tests" | "console" | "verbose";
 export type BodyView = "pretty" | "raw";

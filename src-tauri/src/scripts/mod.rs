@@ -344,6 +344,7 @@ mod tests {
                 body: RequestBody {
                     body_type: "none".into(),
                     content: String::new(),
+                    language: None,
                 },
             },
             response: Some(HttpResponse {
@@ -354,6 +355,7 @@ mod tests {
                 body_size: 30,
                 duration_ms: 12,
                 content_type: Some("application/json".into()),
+                verbose: String::new(),
             }),
             variables: HashMap::new(),
             permissions: ScriptPermissions {
@@ -428,6 +430,7 @@ mod tests {
                 body: RequestBody {
                     body_type: "none".into(),
                     content: String::new(),
+                    language: None,
                 },
             },
             response: Some(HttpResponse {
@@ -438,6 +441,7 @@ mod tests {
                 body_size: 11,
                 duration_ms: 5,
                 content_type: None,
+                verbose: String::new(),
             }),
             variables: HashMap::new(),
             permissions: ScriptPermissions::default(),
@@ -488,6 +492,7 @@ mod tests {
                 body: RequestBody {
                     body_type: "none".into(),
                     content: String::new(),
+                    language: None,
                 },
             },
             response: None,
@@ -525,6 +530,7 @@ mod tests {
                 body: RequestBody {
                     body_type: "none".into(),
                     content: String::new(),
+                    language: None,
                 },
             },
             response: None,
@@ -564,6 +570,7 @@ mod tests {
                 body: RequestBody {
                     body_type: "none".into(),
                     content: String::new(),
+                    language: None,
                 },
             },
             response: None,
@@ -607,6 +614,7 @@ mod tests {
                 body: RequestBody {
                     body_type: "none".into(),
                     content: String::new(),
+                    language: None,
                 },
             },
             response: None,

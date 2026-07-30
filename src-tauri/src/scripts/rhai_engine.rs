@@ -207,6 +207,9 @@ fn request_to_map(req: &crate::models::MutableRequest) -> Map {
     m.insert("url".into(), Dynamic::from(req.url.clone()));
     m.insert("body_type".into(), Dynamic::from(req.body.body_type.clone()));
     m.insert("body".into(), Dynamic::from(req.body.content.clone()));
+    if let Some(ref lang) = req.body.language {
+        m.insert("body_language".into(), Dynamic::from(lang.clone()));
+    }
     let mut headers = rhai::Array::new();
     for h in &req.headers {
         let mut hm = Map::new();
@@ -248,6 +251,11 @@ fn map_to_request(m: &Map, base: &crate::models::MutableRequest) -> crate::model
     if let Some(v) = m.get("body_type") {
         if let Ok(s) = v.clone().into_string() {
             req.body.body_type = s;
+        }
+    }
+    if let Some(v) = m.get("body_language") {
+        if let Ok(s) = v.clone().into_string() {
+            req.body.language = Some(s);
         }
     }
     if let Some(v) = m.get("headers") {
@@ -296,13 +304,18 @@ fn map_to_request(m: &Map, base: &crate::models::MutableRequest) -> crate::model
     if let Some(v) = m.get("body") {
         if let Some(bm) = v.clone().try_cast::<Map>() {
             if let Some(t) = bm.get("type").and_then(|x| x.clone().into_string().ok()) {
+                let lang = bm
+                    .get("language")
+                    .and_then(|x| x.clone().into_string().ok());
                 req.body = RequestBody {
                     body_type: t,
                     content: bm
                         .get("content")
                         .and_then(|x| x.clone().into_string().ok())
                         .unwrap_or_default(),
-                };
+                    language: lang,
+                }
+                .normalize();
             }
         }
     }

@@ -25,7 +25,9 @@ pub fn assemble_request(
     let body = RequestBody {
         body_type: input.body.body_type.clone(),
         content: interpolate(&input.body.content, vars),
-    };
+        language: input.body.language.clone(),
+    }
+    .normalize();
 
     let mut auth = input.auth.clone();
     auth.token = interpolate(&auth.token, vars);
@@ -117,32 +119,60 @@ pub async fn send_request(
     }
 
     let mut header_map = HeaderMap::new();
+    let mut out_headers: Vec<(String, String)> = Vec::new();
     for h in headers.iter().filter(|h| h.enabled && !h.key.is_empty()) {
         let name = HeaderName::from_bytes(h.key.as_bytes())
             .map_err(|e| format!("Invalid header name '{}': {e}", h.key))?;
         let value = HeaderValue::from_str(&h.value)
             .map_err(|e| format!("Invalid header value for '{}': {e}", h.key))?;
         header_map.append(name, value);
+        out_headers.push((h.key.clone(), h.value.clone()));
     }
 
     // If URL from assemble already has query, use as-is. Also re-apply query list
     // in case URL parse stripped nothing - assemble already included them.
     let _ = query; // used in assemble
 
-    let mut request_builder = client.request(method, url).headers(header_map);
+    let scheme = url.scheme().to_string();
+    let host = url.host_str().unwrap_or("").to_string();
+    let port = url
+        .port_or_known_default()
+        .map(|p| p.to_string())
+        .unwrap_or_default();
+    let path_q = {
+        let p = url.path();
+        match url.query() {
+            Some(q) => format!("{p}?{q}"),
+            None => p.to_string(),
+        }
+    };
 
-    let body_type = body.body_type.to_lowercase();
-    match body_type.as_str() {
+    let mut request_builder = client.request(method.clone(), url.clone()).headers(header_map);
+
+    // Effective body metadata for verbose (curl -v style)
+    let mut body_note = String::from("none");
+    let mut req_body_len: Option<usize> = None;
+    let body_mode = body.send_mode().to_string();
+
+    // Postman modes (+ legacy aliases via send_mode)
+    match body_mode.as_str() {
         "json" => {
             if !headers_contain(&headers, "content-type") {
                 request_builder = request_builder.header("Content-Type", "application/json");
+                out_headers.push(("Content-Type".into(), "application/json".into()));
             }
-            request_builder = request_builder.body(body.content);
+            req_body_len = Some(body.content.len());
+            body_note = format!("json ({} bytes)", body.content.len());
+            request_builder = request_builder.body(body.content.clone());
         }
-        "form" => {
+        "urlencoded" => {
             if !headers_contain(&headers, "content-type") {
                 request_builder = request_builder
                     .header("Content-Type", "application/x-www-form-urlencoded");
+                out_headers.push((
+                    "Content-Type".into(),
+                    "application/x-www-form-urlencoded".into(),
+                ));
             }
             let fields = crate::form_fields::parse_form_fields(&body.content);
             let encoded = if !fields.is_empty() {
@@ -154,20 +184,34 @@ pub async fn send_request(
             } else {
                 encode_form_body(&body.content)
             };
+            req_body_len = Some(encoded.len());
+            body_note = format!("x-www-form-urlencoded ({} bytes)", encoded.len());
             request_builder = request_builder.body(encoded);
         }
         "raw" => {
-            request_builder = request_builder.body(body.content);
+            if !headers_contain(&headers, "content-type") {
+                if let Some(ct) = raw_content_type(body.language.as_deref()) {
+                    request_builder = request_builder.header("Content-Type", ct);
+                    out_headers.push(("Content-Type".into(), ct.into()));
+                }
+            }
+            req_body_len = Some(body.content.len());
+            let lang = body.language.as_deref().unwrap_or("text");
+            body_note = format!("raw/{lang} ({} bytes)", body.content.len());
+            request_builder = request_builder.body(body.content.clone());
         }
         "binary" => {
             let bytes = base64::engine::general_purpose::STANDARD
                 .decode(body.content.trim())
-                .unwrap_or_else(|_| body.content.into_bytes());
+                .unwrap_or_else(|_| body.content.as_bytes().to_vec());
+            req_body_len = Some(bytes.len());
+            body_note = format!("binary ({} bytes)", bytes.len());
             request_builder = request_builder.body(bytes);
         }
-        "multipart" => {
+        "form-data" => {
             let fields = crate::form_fields::parse_form_fields(&body.content);
             let mut form = reqwest::multipart::Form::new();
+            let mut field_count = 0usize;
             for f in fields.iter().filter(|f| f.enabled && !f.key.is_empty()) {
                 let value = if let Some(b64) = f.value.strip_prefix("[binary:base64]") {
                     // decode binary field if we stored it that way
@@ -180,18 +224,73 @@ pub async fn send_request(
                     f.value.clone()
                 };
                 form = form.text(f.key.clone(), value);
+                field_count += 1;
             }
             // Do not set Content-Type manually — reqwest generates boundary
+            out_headers.push((
+                "Content-Type".into(),
+                "multipart/form-data; boundary=<auto>".into(),
+            ));
+            body_note = format!("multipart/form-data ({field_count} fields, boundary auto)");
             request_builder = request_builder.multipart(form);
         }
         _ => {}
     }
 
+    // Ensure Host is shown in verbose even if not explicitly set
+    if !out_headers
+        .iter()
+        .any(|(k, _)| k.eq_ignore_ascii_case("host"))
+        && !host.is_empty()
+    {
+        let host_line = if port.is_empty() {
+            host.clone()
+        } else if (scheme == "https" && port == "443") || (scheme == "http" && port == "80") {
+            host.clone()
+        } else {
+            format!("{host}:{port}")
+        };
+        out_headers.insert(0, ("Host".into(), host_line));
+    }
+
+    let mut verbose = String::new();
+    verbose.push_str(&format!("* URL: {url_s}\n"));
+    if !host.is_empty() {
+        verbose.push_str(&format!("* Host {host} port {port} was resolved.\n"));
+        verbose.push_str(&format!("* Trying {host}:{port}…\n"));
+        verbose.push_str(&format!(
+            "* Connected to {host} ({scheme}) port {port}\n"
+        ));
+    }
+    if let Some(ref proxy) = input.proxy {
+        verbose.push_str(&format!("* Proxy mode: {}\n", proxy.mode));
+    }
+    verbose.push_str(&format!(
+        "* Timeout: {} ms · Follow redirects: {} (max {})\n",
+        timeout_ms, follow, max_redirects
+    ));
+
     let start = Instant::now();
-    let response = request_builder
-        .send()
-        .await
-        .map_err(|e| format!("Request failed: {e}"))?;
+    let response = match request_builder.send().await {
+        Ok(r) => r,
+        Err(e) => {
+            let elapsed = start.elapsed().as_millis();
+            verbose.push_str(&format!(
+                "> {} {} HTTP/1.1\n",
+                method_s,
+                if path_q.is_empty() { "/" } else { &path_q }
+            ));
+            for (k, v) in &out_headers {
+                verbose.push_str(&format!("> {k}: {v}\n"));
+            }
+            verbose.push_str(">\n");
+            verbose.push_str(&format!("* Request body: {body_note}\n"));
+            verbose.push_str("* Sending request to server\n");
+            verbose.push_str(&format!("* Request failed after {elapsed} ms\n"));
+            verbose.push_str(&format!("* Error: {e}\n"));
+            return Err(format!("Request failed: {e}\n\n--- verbose ---\n{verbose}"));
+        }
+    };
     let duration_ms = start.elapsed().as_millis() as u64;
 
     let status = response.status().as_u16();
@@ -200,6 +299,12 @@ pub async fn send_request(
         .canonical_reason()
         .unwrap_or("")
         .to_string();
+    let http_ver = version_label(response.version());
+    let remote = response
+        .remote_addr()
+        .map(|a| a.to_string())
+        .unwrap_or_else(|| host.clone());
+    let final_url = response.url().to_string();
     let content_type = response
         .headers()
         .get(reqwest::header::CONTENT_TYPE)
@@ -223,6 +328,38 @@ pub async fn send_request(
         })
         .collect();
 
+    // Request block (curl / Apifox console style)
+    verbose.push_str(&format!(
+        "> {} {} {}\n",
+        method_s,
+        if path_q.is_empty() { "/" } else { &path_q },
+        http_ver
+    ));
+    for (k, v) in &out_headers {
+        verbose.push_str(&format!("> {k}: {v}\n"));
+    }
+    verbose.push_str(">\n");
+    verbose.push_str(&format!("* Request body: {body_note}\n"));
+    if let Some(n) = req_body_len {
+        verbose.push_str(&format!("* upload completely sent off: {n} bytes\n"));
+    }
+    if final_url != url_s {
+        verbose.push_str(&format!("* Redirected to: {final_url}\n"));
+    }
+    if !remote.is_empty() {
+        verbose.push_str(&format!("* Remote address: {remote}\n"));
+    }
+
+    // Gray mid-status tips (like Apifox Network console)
+    verbose.push_str("* Sending request to server\n");
+
+    // Response status + headers
+    verbose.push_str(&format!("< {} {} {}\n", http_ver, status, status_text));
+    for h in &resp_headers {
+        verbose.push_str(&format!("< {}: {}\n", h.key, h.value));
+    }
+    verbose.push_str("<\n");
+
     let bytes = response
         .bytes()
         .await
@@ -232,6 +369,16 @@ pub async fn send_request(
         Ok(s) => s,
         Err(e) => String::from_utf8_lossy(e.as_bytes()).into_owned(),
     };
+
+    verbose.push_str(&format!(
+        "* Connection #0 to host {host} left intact\n"
+    ));
+    verbose.push_str(&format!("* Total time: {duration_ms} ms\n"));
+    if let Some(ref ct) = content_type {
+        verbose.push_str(&format!("* Content-Type: {ct}\n"));
+    }
+    // Trailing size tip — same phrasing as Apifox
+    verbose.push_str(&format!("* [{} received]\n", format_size_label(body_size)));
 
     if !input.skip_cookies {
         if let Some(jar) = cookie_jar {
@@ -247,7 +394,29 @@ pub async fn send_request(
         body_size,
         duration_ms,
         content_type,
+        verbose,
     })
+}
+
+fn version_label(v: reqwest::Version) -> &'static str {
+    match v {
+        reqwest::Version::HTTP_09 => "HTTP/0.9",
+        reqwest::Version::HTTP_10 => "HTTP/1.0",
+        reqwest::Version::HTTP_11 => "HTTP/1.1",
+        reqwest::Version::HTTP_2 => "HTTP/2",
+        reqwest::Version::HTTP_3 => "HTTP/3",
+        _ => "HTTP/?",
+    }
+}
+
+fn format_size_label(bytes: u64) -> String {
+    if bytes < 1024 {
+        format!("{bytes} B")
+    } else if bytes < 1024 * 1024 {
+        format!("{:.1} KB", bytes as f64 / 1024.0)
+    } else {
+        format!("{:.2} MB", bytes as f64 / (1024.0 * 1024.0))
+    }
 }
 
 fn apply_proxy(builder: &mut reqwest::ClientBuilder, cfg: &ProxyConfig) -> Result<(), String> {
@@ -308,6 +477,17 @@ fn headers_contain(headers: &[KeyValue], name: &str) -> bool {
         .any(|h| h.enabled && h.key.eq_ignore_ascii_case(name))
 }
 
+fn raw_content_type(language: Option<&str>) -> Option<&'static str> {
+    match language.map(|s| s.to_lowercase()).as_deref() {
+        Some("json") => Some("application/json"),
+        Some("javascript") => Some("application/javascript"),
+        Some("html") => Some("text/html"),
+        Some("xml") => Some("application/xml"),
+        Some("text") | None => Some("text/plain"),
+        _ => Some("text/plain"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -353,6 +533,7 @@ mod tests {
             body: RequestBody {
                 body_type: "none".into(),
                 content: String::new(),
+                language: None,
             },
             auth: AuthConfig {
                 auth_type: "bearer".into(),
@@ -384,6 +565,7 @@ mod tests {
             body: RequestBody {
                 body_type: "none".into(),
                 content: String::new(),
+                language: None,
             },
             auth: AuthConfig {
                 auth_type: "none".into(),
@@ -421,10 +603,7 @@ mod tests {
             url: base,
             headers: vec![],
             query: vec![],
-            body: RequestBody {
-                body_type: "json".into(),
-                content: r#"{"hello":"world"}"#.into(),
-            },
+            body: RequestBody::with_language("raw", r#"{"hello":"world"}"#, "json"),
             auth: AuthConfig {
                 auth_type: "none".into(),
                 ..Default::default()

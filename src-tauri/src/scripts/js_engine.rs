@@ -52,6 +52,7 @@ fn run_inner(code: &str, ctx: &Arc<Mutex<ScriptContext>>, is_pre: bool) -> Resul
                 "body": {
                     "type": g.request.body.body_type,
                     "content": g.request.body.content,
+                    "language": g.request.body.language,
                 },
             },
             "response": g.response.as_ref().map(|r| serde_json::json!({
@@ -332,6 +333,12 @@ fn apply_js_result(ctx: &Arc<Mutex<ScriptContext>>, json: &str) -> Result<(), St
             if let Some(c) = body.get("content").and_then(|x| x.as_str()) {
                 g.request.body.content = c.to_string();
             }
+            if let Some(l) = body.get("language").and_then(|x| x.as_str()) {
+                g.request.body.language = Some(l.to_string());
+            } else if body.get("language").map(|x| x.is_null()).unwrap_or(false) {
+                g.request.body.language = None;
+            }
+            g.request.body = g.request.body.clone().normalize();
         }
         if let Some(headers) = req.get("headers").and_then(|h| h.as_array()) {
             g.request.headers = headers
