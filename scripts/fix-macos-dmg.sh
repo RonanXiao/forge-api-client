@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Rebuild a clean macOS DMG with ONLY:
+# Build a clean macOS DMG with ONLY:
 #   - Forge.app
 #   - Applications (symlink)
-# Tauri/create-dmg always injects .VolumeIcon.icns for a custom volume icon.
-# Hiding/deleting it is unreliable (Finder ghosts / .DS_Store). So we discard
-# Tauri's DMG and recreate from the .app with plain hdiutil (no volicon).
+#
+# Called after `tauri build --bundles app`. Never uses Tauri's DMG (which
+# injects .VolumeIcon.icns and auto-opens a messy installer window).
 set -euo pipefail
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
@@ -21,7 +21,6 @@ VERSION="$(
     || echo "0.1.0"
 )"
 ARCH="$(uname -m)"
-# match tauri naming: Forge_0.1.0_aarch64.dmg
 case "$ARCH" in
   arm64) ARCH_LABEL="aarch64" ;;
   x86_64) ARCH_LABEL="x64" ;;
@@ -30,8 +29,8 @@ esac
 OUT_DMG="$DMG_DIR/${PRODUCT_NAME}_${VERSION}_${ARCH_LABEL}.dmg"
 
 if [[ ! -d "$APP" ]]; then
-  echo "skip fix-macos-dmg: missing $APP (build app bundle first)"
-  exit 0
+  echo "ERROR: missing $APP — run tauri build --bundles app first" >&2
+  exit 1
 fi
 
 mkdir -p "$DMG_DIR"
@@ -42,77 +41,62 @@ CLEAN_SRC="$STAGE/src"
 mkdir -p "$CLEAN_SRC" "$MNT"
 
 cleanup() {
-  if mount | grep -q "$MNT"; then
-    hdiutil detach "$MNT" -quiet -force 2>/dev/null || true
-  fi
-  # eject anything left from failed runs
   hdiutil detach "$MNT" -quiet -force 2>/dev/null || true
   rm -rf "$STAGE"
 }
 trap cleanup EXIT
 
-echo "fix-macos-dmg: staging clean contents from $APP"
-# ditto preserves resource forks / codesign better than cp -R
+# Eject any already-mounted Forge volumes so Finder won't keep an old window
+for vol in /Volumes/"$PRODUCT_NAME" /Volumes/"${PRODUCT_NAME} "*; do
+  if [[ -d "$vol" ]]; then
+    echo "fix-macos-dmg: ejecting $vol"
+    hdiutil detach "$vol" -quiet -force 2>/dev/null || true
+  fi
+done
+
+echo "fix-macos-dmg: staging from $APP"
 ditto "$APP" "$CLEAN_SRC/${PRODUCT_NAME}.app"
 ln -s /Applications "$CLEAN_SRC/Applications"
 
-# Remove any stale dmg(s) from tauri so the user can't open the wrong one
 rm -f "$DMG_DIR"/*.dmg
 
-# Create uncompressed RW image from folder (no volume icon file)
 echo "fix-macos-dmg: creating image..."
+# UDZO in one shot — no remount → fewer .fseventsd / ghost files
 hdiutil create \
   -volname "$PRODUCT_NAME" \
   -srcfolder "$CLEAN_SRC" \
   -ov \
-  -format UDRW \
+  -format UDZO \
+  -imagekey zlib-level=9 \
   -fs HFS+ \
-  "$RW_DMG" >/dev/null
+  "$OUT_DMG" >/dev/null
 
-# Mount and tidy Finder window: only two icons, no ghosts
-hdiutil attach -readwrite -noverify -noautoopen "$RW_DMG" -mountpoint "$MNT" >/dev/null
+# Optional: mount once RO to hide system junk if present, re-pack if needed
+hdiutil attach -readwrite -noverify -noautoopen "$OUT_DMG" -mountpoint "$MNT" >/dev/null 2>&1 || {
+  # UDZO may not mount RW — convert path
+  hdiutil convert "$OUT_DMG" -format UDRW -o "$RW_DMG" -quiet
+  rm -f "$OUT_DMG"
+  hdiutil attach -readwrite -noverify -noautoopen "$RW_DMG" -mountpoint "$MNT" >/dev/null
+  NEED_CONVERT=1
+}
 
-# Belt-and-suspenders: never leave volume icon artifacts
 rm -f "$MNT/.VolumeIcon.icns" "$MNT/.DS_Store"
-rm -rf "$MNT/.fseventsd" "$MNT/.Spotlight-V100" "$MNT/.Trashes"
+rm -rf "$MNT/.fseventsd" "$MNT/.Spotlight-V100" "$MNT/.Trashes" "$MNT/.TemporaryItems"
 if command -v SetFile >/dev/null 2>&1; then
   SetFile -a c "$MNT" 2>/dev/null || true
-fi
-
-# Position icons via AppleScript (app left, Applications right)
-if command -v osascript >/dev/null 2>&1; then
-  osascript <<EOF || true
-tell application "Finder"
-  tell disk "$PRODUCT_NAME"
-    open
-    set current view of container window to icon view
-    set toolbar visible of container window to false
-    set statusbar visible of container window to false
-    set the bounds of container window to {200, 120, 860, 520}
-    set viewOptions to the icon view options of container window
-    set arrangement of viewOptions to not arranged
-    set icon size of viewOptions to 128
-    set position of item "${PRODUCT_NAME}.app" of container window to {180, 170}
-    set position of item "Applications" of container window to {480, 170}
-    update without registering applications
-    delay 0.5
-    close
-  end tell
-end tell
-EOF
-fi
-
-# Final sweep after AppleScript (it may recreate .DS_Store — keep it for positions)
-rm -f "$MNT/.VolumeIcon.icns"
-if command -v SetFile >/dev/null 2>&1; then
-  SetFile -a c "$MNT" 2>/dev/null || true
+  # If fseventsd reappears before detach, hide it
+  if [[ -d "$MNT/.fseventsd" ]]; then
+    SetFile -a V "$MNT/.fseventsd" 2>/dev/null || true
+    chflags hidden "$MNT/.fseventsd" 2>/dev/null || true
+  fi
 fi
 
 sync
 hdiutil detach "$MNT" -quiet -force
 
-echo "fix-macos-dmg: compressing $OUT_DMG"
-hdiutil convert "$RW_DMG" -format UDZO -imagekey zlib-level=9 -o "$OUT_DMG" -quiet
+if [[ "${NEED_CONVERT:-0}" == "1" ]]; then
+  hdiutil convert "$RW_DMG" -format UDZO -imagekey zlib-level=9 -o "$OUT_DMG" -quiet
+fi
 
 # Verify
 VERIFY_MNT="$STAGE/verify"
@@ -121,15 +105,12 @@ hdiutil attach -readonly -noverify -noautoopen "$OUT_DMG" -mountpoint "$VERIFY_M
 echo "fix-macos-dmg: final contents:"
 ls -la "$VERIFY_MNT"
 if [[ -e "$VERIFY_MNT/.VolumeIcon.icns" ]]; then
-  echo "ERROR: .VolumeIcon.icns still present after rebuild" >&2
+  echo "ERROR: .VolumeIcon.icns still present" >&2
   hdiutil detach "$VERIFY_MNT" -quiet -force || true
   exit 1
 fi
-# ensure only app + Applications (+ optional .DS_Store)
-ENTRIES="$(find "$VERIFY_MNT" -maxdepth 1 ! -path "$VERIFY_MNT" ! -name '.DS_Store' ! -name '.fseventsd' -print | wc -l | tr -d ' ')"
 hdiutil detach "$VERIFY_MNT" -quiet -force
-echo "fix-macos-dmg: visible entry count (excl. DS_Store)=$ENTRIES"
+
 echo "fix-macos-dmg: done → $OUT_DMG"
-echo ""
-echo "IMPORTANT: Eject any already-open \"Forge\" volume in Finder, then open:"
-echo "  $OUT_DMG"
+echo "fix-macos-dmg: opening clean installer..."
+open "$OUT_DMG"

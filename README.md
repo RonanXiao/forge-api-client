@@ -39,8 +39,11 @@ pnpm install
 pnpm tauri:build
 ```
 
-会先构建前端，再编译 Rust release，并打出安装包；macOS 上还会跑 `scripts/fix-macos-dmg.sh`：  
-**丢弃 Tauri 自带的 DMG**，用 `.app` 重新打一个干净盘（只有 `Forge.app` + `Applications`，不含 `.VolumeIcon.icns`）。
+macOS 上 `pnpm tauri:build` 会：
+
+1. 只打 **`.app`**（不让 Tauri 生成/自动打开带 `.VolumeIcon.icns` 的 DMG）  
+2. 用 `scripts/fix-macos-dmg.sh` 从 `.app` 打干净 DMG（`Forge.app` + `Applications`）  
+3. **打开干净的 DMG**（不会再弹旧版安装窗）
 
 ### 产物路径（macOS）
 
