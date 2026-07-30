@@ -69,9 +69,9 @@ export function parseBodyFields(content: string): KeyValue[] {
   return rows.length > 1 ? rows : [emptyKeyValue()];
 }
 
-/** Serialize key/value rows to body.content JSON storage. */
+/** Serialize key/value rows to body.content JSON storage (drop empty keys). */
 export function fieldsToBodyContent(fields: KeyValue[]): string {
-  const cleaned = fields.filter((f) => f.key || f.value);
+  const cleaned = fields.filter((f) => f.key.trim().length > 0);
   return JSON.stringify(
     cleaned.map((f) => ({ key: f.key, value: f.value, enabled: f.enabled })),
     null,

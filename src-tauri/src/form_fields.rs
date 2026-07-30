@@ -79,19 +79,25 @@ pub fn fields_to_json(fields: &[KeyValue]) -> String {
 }
 
 /// Parse a raw multipart/form-data body (with boundaries) into fields.
-/// Values are decoded as UTF-8 (lossy for binary parts).
+/// Values keep UTF-8 as-is (e.g. Chinese from browser Copy as cURL).
 pub fn parse_multipart_raw(content: &str) -> Vec<KeyValue> {
-    // Normalize line endings
+    // Normalize line endings only — do not touch multi-byte UTF-8
     let content = content.replace("\r\n", "\n").replace('\r', "\n");
 
-    // Detect boundary from first line starting with --
-    let boundary = content.lines().find_map(|line| {
+    // Opening delimiter is the full first boundary line, e.g.
+    //   ------WebKitFormBoundaryLaX8gFpGxFVowHCu
+    // (Content-Type boundary is ----WebKit...; wire form uses -- + boundary.)
+    let open_delim = content.lines().find_map(|line| {
         let t = line.trim();
-        if t.starts_with("--") && t.len() > 2 && !t.ends_with("--") {
-            Some(t.trim_start_matches('-').to_string())
-        } else if t.starts_with("------") {
-            // ------WebKit...
-            Some(t.trim_start_matches('-').to_string())
+        if t.starts_with("--") && t.len() > 4 && !t.chars().all(|c| c == '-') {
+            // Drop trailing -- used only on the closing boundary line
+            let open = t.trim_end_matches('-');
+            // Ensure we still have the leading --
+            if open.starts_with("--") && open.len() > 4 {
+                Some(open.to_string())
+            } else {
+                Some(t.to_string())
+            }
         } else {
             None
         }
@@ -99,25 +105,34 @@ pub fn parse_multipart_raw(content: &str) -> Vec<KeyValue> {
 
     let mut fields = Vec::new();
 
-    if let Some(ref b) = boundary {
-        // Split on --boundary
-        let delim = format!("--{b}");
-        for part in content.split(&delim) {
+    if let Some(ref delim) = open_delim {
+        for part in content.split(delim) {
             let part = part.trim();
-            if part.is_empty() || part == "--" || part.starts_with("--") {
+            // Skip empties and pure closing dashes
+            if part.is_empty() || part == "--" || part.chars().all(|c| c == '-') {
                 continue;
             }
-            // Strip trailing --
-            let part = part.trim_end_matches('-').trim();
+            // Closing boundary leaves a leading "--" on the last empty segment only
+            let part = part.strip_prefix("--").unwrap_or(part).trim();
+            if part.is_empty() {
+                continue;
+            }
             if let Some(kv) = parse_multipart_part(part) {
-                fields.push(kv);
+                // Skip empty keys / empty spurious parts
+                if !kv.key.is_empty() {
+                    fields.push(kv);
+                }
             }
         }
     } else {
-        // Fallback: look for name="..." patterns
         for chunk in content.split("Content-Disposition:") {
+            if chunk.trim().is_empty() {
+                continue;
+            }
             if let Some(kv) = parse_multipart_part(&format!("Content-Disposition:{chunk}")) {
-                fields.push(kv);
+                if !kv.key.is_empty() {
+                    fields.push(kv);
+                }
             }
         }
     }
@@ -244,14 +259,39 @@ Content-Disposition: form-data; name=\"beginDatetime\"\r\n\
 2026-07-31 12:00\r\n\
 ------WebKitFormBoundaryLaX8gFpGxFVowHCu--\r\n";
         let fields = parse_multipart_raw(raw);
+        assert_eq!(fields.len(), 3, "{:?}", fields);
         assert!(fields.iter().any(|f| f.key == "compId" && f.value == "nbacc4ca95d"));
         assert!(fields.iter().any(|f| f.key == "pageNo" && f.value == "1"));
         assert!(fields
             .iter()
             .any(|f| f.key == "beginDatetime" && f.value.contains("2026-07-31")));
-        // round-trip json
         let json = fields_to_json(&fields);
         let again = parse_form_fields(&json);
         assert_eq!(again.len(), fields.len());
+    }
+
+    #[test]
+    fn parse_chinese_utf8_field() {
+        let raw = "------WebKitFormBoundaryLaX8gFpGxFVowHCu\r\n\
+Content-Disposition: form-data; name=\"pageVar_member_conflict_type\"\r\n\
+\r\n\
+您安排的会议2026-07-31 12:00至2026-07-31 13:30有冲突，确认继续申请吗？\r\n\
+------WebKitFormBoundaryLaX8gFpGxFVowHCu\r\n\
+Content-Disposition: form-data; name=\"beginDatetime\"\r\n\
+\r\n\
+2026-07-31 12:00\r\n\
+------WebKitFormBoundaryLaX8gFpGxFVowHCu--\r\n";
+        let fields = parse_multipart_raw(raw);
+        assert_eq!(fields.len(), 2, "{:?}", fields);
+        let v = &fields
+            .iter()
+            .find(|f| f.key == "pageVar_member_conflict_type")
+            .unwrap()
+            .value;
+        assert!(
+            v.contains("您安排的会议") && v.contains("有冲突"),
+            "got: {v:?}"
+        );
+        assert!(!v.contains('æ') && !v.contains('å'), "mojibake in {v:?}");
     }
 }

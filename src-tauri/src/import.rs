@@ -261,30 +261,34 @@ pub fn parse_curl(input: &str) -> Result<HttpRequest, String> {
     })
 }
 
+/// Join shell line-continuations (`\` + newline) without breaking UTF-8.
+/// IMPORTANT: must iterate by `char`, never `bytes[i] as char` (that mangles Chinese).
 fn normalize_curl_input(input: &str) -> String {
-    // Join line continuations: trailing \ before newline
     let mut out = String::with_capacity(input.len());
-    let bytes = input.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'\\' && i + 1 < bytes.len() && (bytes[i + 1] == b'\n' || bytes[i + 1] == b'\r')
-        {
-            // skip backslash and following newline(s)
-            i += 1;
-            if i < bytes.len() && bytes[i] == b'\r' {
-                i += 1;
+    let mut chars = input.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.peek().copied() {
+                Some('\n') => {
+                    chars.next();
+                    if !out.ends_with(' ') {
+                        out.push(' ');
+                    }
+                }
+                Some('\r') => {
+                    chars.next();
+                    if chars.peek() == Some(&'\n') {
+                        chars.next();
+                    }
+                    if !out.ends_with(' ') {
+                        out.push(' ');
+                    }
+                }
+                _ => out.push('\\'),
             }
-            if i < bytes.len() && bytes[i] == b'\n' {
-                i += 1;
-            }
-            // collapse to single space
-            if !out.ends_with(' ') {
-                out.push(' ');
-            }
-            continue;
+        } else {
+            out.push(c);
         }
-        out.push(bytes[i] as char);
-        i += 1;
     }
     out.trim().to_string()
 }
@@ -796,18 +800,40 @@ mod user_curl_fixture {
     use super::*;
 
     #[test]
-    fn parse_realistic_browser_copy_curl() {
-        // Shape similar to Chrome "Copy as cURL" with ANSI-C body
+    fn parse_realistic_browser_copy_curl_with_chinese() {
+        // Real browser "Copy as cURL" shape: Chinese UTF-8 inside $'...'
         let raw = r#"curl 'http://10.12.105.185:20600/api/ebuilder/coms/nlist/getData' \
   -H 'Accept: application/json, text/plain, */*' \
   -H 'Content-Type: multipart/form-data; boundary=----WebKitFormBoundaryLaX8gFpGxFVowHCu' \
-  --data-raw $'------WebKitFormBoundaryLaX8gFpGxFVowHCu\r\nContent-Disposition: form-data; name="compId"\r\n\r\nnbacc4ca95d0344159f8963b69c94709c\r\n------WebKitFormBoundaryLaX8gFpGxFVowHCu\r\nContent-Disposition: form-data; name="pageNo"\r\n\r\n1\r\n------WebKitFormBoundaryLaX8gFpGxFVowHCu--\r\n' \
+  -b 'langType=zh_CN' \
+  --data-raw $'------WebKitFormBoundaryLaX8gFpGxFVowHCu\r\nContent-Disposition: form-data; name="pageVar_member_conflict_type"\r\n\r\n您安排的会议2026-07-31 12:00至2026-07-31 13:30有冲突，确认继续申请吗？\r\n------WebKitFormBoundaryLaX8gFpGxFVowHCu\r\nContent-Disposition: form-data; name="beginDatetime"\r\n\r\n2026-07-31 12:00\r\n------WebKitFormBoundaryLaX8gFpGxFVowHCu\r\nContent-Disposition: form-data; name="endDatetime"\r\n\r\n2026-07-31 13:30\r\n------WebKitFormBoundaryLaX8gFpGxFVowHCu\r\nContent-Disposition: form-data; name="compId"\r\n\r\nbacc4ca95d0344159f8963b69c94709c\r\n------WebKitFormBoundaryLaX8gFpGxFVowHCu\r\nContent-Disposition: form-data; name="pageNo"\r\n\r\n1\r\n------WebKitFormBoundaryLaX8gFpGxFVowHCu\r\nContent-Disposition: form-data; name="pageSize"\r\n\r\n20\r\n------WebKitFormBoundaryLaX8gFpGxFVowHCu--\r\n' \
   --insecure"#;
         let req = parse_curl(raw).expect("should parse browser curl");
         assert_eq!(req.method, "POST");
         assert!(req.url.contains("10.12.105.185:20600"));
-        assert!(req.headers.iter().any(|h| h.key.eq_ignore_ascii_case("Accept")));
-        assert!(req.body.content.contains("compId") || req.body.content.contains("pageNo"));
-        assert_ne!(req.url.starts_with("curl"), true);
+        assert!(req.body.content.trim_start().starts_with('['), "{}", req.body.content);
+        let fields = crate::form_fields::parse_form_fields(&req.body.content);
+        assert!(
+            fields.iter().any(|f| {
+                f.key == "pageVar_member_conflict_type"
+                    && f.value.contains("您安排的会议")
+                    && f.value.contains("有冲突")
+            }),
+            "chinese garbled or missing: {:?}",
+            fields
+                .iter()
+                .find(|f| f.key == "pageVar_member_conflict_type")
+        );
+        assert!(fields.iter().any(|f| f.key == "beginDatetime" && f.value == "2026-07-31 12:00"));
+        assert!(fields.iter().any(|f| f.key == "compId"));
+        assert!(fields.iter().any(|f| f.key == "pageNo" && f.value == "1"));
+        assert!(fields.iter().all(|f| !f.key.is_empty()), "empty key rows: {:?}", fields);
+        assert!(
+            req.headers
+                .iter()
+                .any(|h| h.key.eq_ignore_ascii_case("Cookie")),
+            "cookie header missing: {:?}",
+            req.headers
+        );
     }
 }
