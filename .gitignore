@@ -2,7 +2,10 @@
 .DS_Store
 .AppleDouble
 .LSOverride
-Icon?
+# Folder custom-icon resource (literal "Icon\r"); avoid "Icon?" which
+# case-insensitively matches app icons like icon.png / icon.icns on macOS.
+Icon[
+]
 ._*
 
 # Dependencies
