@@ -25,7 +25,7 @@ fn app_data_dir() -> Result<PathBuf, String> {
         return Ok(p.clone());
     }
     let base = dirs::data_dir().ok_or("Could not resolve data directory")?;
-    let dir = base.join("FastPostman");
+    let dir = base.join("Forge");
     fs::create_dir_all(&dir).map_err(|e| format!("Failed to create data dir: {e}"))?;
     Ok(dir)
 }

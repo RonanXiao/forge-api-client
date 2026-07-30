@@ -1,4 +1,4 @@
-# FastPostman
+# Forge
 
 轻量、本地优先的高性能 API 客户端。对标 Postman / Bruno，基于 **Tauri 2 + Rust + Svelte 5**。
 
@@ -28,7 +28,7 @@ pnpm check
 pnpm build
 ```
 
-数据目录：`~/Library/Application Support/FastPostman/`（macOS）
+数据目录：`~/Library/Application Support/Forge/`（macOS）
 
 ## 发布 / 打二进制包
 
@@ -45,16 +45,16 @@ pnpm tauri:build
 
 | 产物 | 路径 |
 |------|------|
-| **`.app` 应用** | `src-tauri/target/release/bundle/macos/FastPostman.app` |
+| **`.app` 应用** | `src-tauri/target/release/bundle/macos/Forge.app` |
 | **`.dmg` 安装包** | `src-tauri/target/release/bundle/dmg/` |
-| **可执行文件** | `src-tauri/target/release/fastpostman` |
+| **可执行文件** | `src-tauri/target/release/forge` |
 
-本地使用：双击 `FastPostman.app` 即可。  
+本地使用：双击 `Forge.app` 即可。  
 分发给他人：发送 `.dmg`（或整个 `.app`）。
 
 DMG 里正常应只有：
 
-1. **FastPostman.app** — 应用本体  
+1. **Forge.app** — 应用本体  
 2. **Applications** — 应用程序文件夹快捷方式（拖进去完成安装）  
 
 若仍看到 `.VolumeIcon.icns`，多半是 Finder「显示隐藏文件」开着；那是磁盘自定义图标资源，不是第二个 App。
@@ -70,7 +70,7 @@ DMG 里正常应只有：
 
 ### 注意
 
-1. **调试版**：`src-tauri/target/debug/fastpostman` 也能跑，日常开发更推荐 `pnpm tauri:dev`；对外请用 `release` 包。
+1. **调试版**：`src-tauri/target/debug/forge` 也能跑，日常开发更推荐 `pnpm tauri:dev`；对外请用 `release` 包。
 2. **macOS 分发**：未签名时，别人可能被 Gatekeeper 拦截，可在「系统设置 → 隐私与安全性」里选择「仍要打开」，或使用 Apple 开发者证书做 **codesign + notarize**（正式对外分发建议签名）。
 3. **体积**：release 比 debug 更小更快；依赖（reqwest、Rhai、Boa 等）会让体积大于纯 CLI，但仍远小于 Electron / Postman。
 

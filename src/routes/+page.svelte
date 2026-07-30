@@ -732,9 +732,9 @@
         <div
           class="flex h-6 w-6 items-center justify-center rounded-md bg-indigo-500/20 text-xs font-bold text-indigo-300"
         >
-          FP
+          F
         </div>
-        <span class="text-sm font-semibold tracking-tight">FastPostman</span>
+        <span class="text-sm font-semibold tracking-tight">Forge</span>
       </div>
 
       <select

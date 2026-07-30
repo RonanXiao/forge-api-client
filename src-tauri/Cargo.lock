@@ -1369,37 +1369,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8eb564c5c7423d25c886fb561d1e4ee69f72354d16918afa32c08811f6b6a55"
 
 [[package]]
-name = "fastpostman"
-version = "0.1.0"
-dependencies = [
- "base64 0.23.0",
- "boa_engine",
- "chrono",
- "cookie",
- "dirs",
- "form_urlencoded",
- "md-5",
- "regex",
- "reqwest",
- "rhai",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha2 0.11.0",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-fs",
- "tauri-plugin-opener",
- "tempfile",
- "thiserror 2.0.19",
- "tokio",
- "url",
- "urlencoding",
- "uuid",
-]
-
-[[package]]
 name = "fastrand"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1494,6 +1463,37 @@ name = "foreign-types-shared"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
+
+[[package]]
+name = "forge"
+version = "0.1.0"
+dependencies = [
+ "base64 0.23.0",
+ "boa_engine",
+ "chrono",
+ "cookie",
+ "dirs",
+ "form_urlencoded",
+ "md-5",
+ "regex",
+ "reqwest",
+ "rhai",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2 0.11.0",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-fs",
+ "tauri-plugin-opener",
+ "tempfile",
+ "thiserror 2.0.19",
+ "tokio",
+ "url",
+ "urlencoding",
+ "uuid",
+]
 
 [[package]]
 name = "form_urlencoded"

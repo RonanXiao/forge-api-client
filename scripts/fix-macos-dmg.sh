@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Hide .VolumeIcon.icns inside the built DMG so Finder doesn't show it
-# as a third "file" next to FastPostman.app and Applications.
+# as a third "file" next to Forge.app and Applications.
 set -euo pipefail
 
 if [[ "$(uname -s)" != "Darwin" ]]; then
