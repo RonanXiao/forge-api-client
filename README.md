@@ -4,7 +4,7 @@
 
 规格：[`api-client-spec.md`](./api-client-spec.md)
 
-当前版本：`v0.0.1-beta`（GitHub Releases）
+当前版本：`v0.0.1-beta1`（GitHub Releases）
 
 ## 许可证 / License
 

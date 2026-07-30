@@ -1,6 +1,6 @@
 [package]
 name = "forge"
-version = "0.0.1-beta"
+version = "0.0.1-beta1"
 description = "Forge — a fast, local-first API client"
 authors = ["you"]
 edition = "2021"
