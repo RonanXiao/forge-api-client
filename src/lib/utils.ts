@@ -17,13 +17,13 @@ export const METHODS: HttpMethod[] = [
 ];
 
 export const METHOD_COLORS: Record<string, string> = {
-  GET: "text-emerald-400",
-  POST: "text-amber-400",
-  PUT: "text-sky-400",
-  PATCH: "text-violet-400",
-  DELETE: "text-rose-400",
-  HEAD: "text-slate-400",
-  OPTIONS: "text-slate-400",
+  GET: "text-emerald-600 dark:text-emerald-400",
+  POST: "text-[#FF6C37]",
+  PUT: "text-sky-600 dark:text-sky-400",
+  PATCH: "text-violet-600 dark:text-violet-400",
+  DELETE: "text-rose-600 dark:text-rose-400",
+  HEAD: "text-neutral-500",
+  OPTIONS: "text-neutral-500",
 };
 
 export function emptyKeyValue(): KeyValue {
@@ -90,14 +90,22 @@ export function tryPrettyJson(text: string): string | null {
 
 export function statusBadgeBg(status: number): string {
   if (status >= 200 && status < 300)
-    return "bg-emerald-500/15 text-emerald-400 ring-emerald-500/30";
+    return "bg-emerald-500/15 text-emerald-700 ring-emerald-500/30 dark:text-emerald-400";
   if (status >= 300 && status < 400)
-    return "bg-sky-500/15 text-sky-400 ring-sky-500/30";
+    return "bg-sky-500/15 text-sky-700 ring-sky-500/30 dark:text-sky-400";
   if (status >= 400 && status < 500)
-    return "bg-amber-500/15 text-amber-400 ring-amber-500/30";
+    return "bg-amber-500/15 text-amber-700 ring-amber-500/30 dark:text-amber-400";
   if (status >= 500)
-    return "bg-rose-500/15 text-rose-400 ring-rose-500/30";
-  return "bg-slate-500/15 text-slate-400 ring-slate-500/30";
+    return "bg-rose-500/15 text-rose-700 ring-rose-500/30 dark:text-rose-400";
+  return "bg-neutral-500/15 text-neutral-600 ring-neutral-500/30 dark:text-neutral-400";
+}
+
+/** Detect pasted cURL command (single or multi-line). */
+export function looksLikeCurl(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  const head = t.slice(0, 80).toLowerCase();
+  return head.startsWith("curl ") || head.startsWith("curl\t") || head.startsWith("curl\n");
 }
 
 export function varsFromEnv(

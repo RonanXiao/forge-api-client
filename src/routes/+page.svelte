@@ -66,7 +66,7 @@
     defaultEngine: "rhai",
     proxy: { mode: "system" },
     scriptPermissions: { allowFs: true, allowNetwork: false, timeoutMs: 5000 },
-    theme: "dark",
+    theme: "light",
   });
   let envFile = $state<EnvironmentFile>({ environments: [], activeId: null });
   let cookies = $state<CookieEntry[]>([]);
@@ -703,9 +703,7 @@
 </script>
 
 <div
-  class="flex h-screen w-screen overflow-hidden {dark
-    ? 'bg-slate-950 text-slate-100'
-    : 'bg-slate-100 text-slate-900'}"
+  class="flex h-screen w-screen overflow-hidden bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100"
 >
   <Sidebar
     {collections}
@@ -726,11 +724,11 @@
 
   <main class="flex min-w-0 flex-1 flex-col">
     <header
-      class="flex h-11 shrink-0 items-center gap-2 border-b border-slate-800/80 px-3"
+      class="flex h-11 shrink-0 items-center gap-2 border-b border-app px-3"
     >
       <div class="flex items-center gap-2">
         <div
-          class="flex h-6 w-6 items-center justify-center rounded-md bg-indigo-500/20 text-xs font-bold text-indigo-300"
+          class="flex h-6 w-6 items-center justify-center rounded-md bg-[#FF6C37]/15 text-xs font-bold text-[#FF6C37]"
         >
           F
         </div>
@@ -758,17 +756,17 @@
         />
         {#if showSearch && searchHits.length > 0}
           <div
-            class="absolute left-0 right-0 top-full z-20 mt-1 max-h-64 overflow-auto rounded-md border border-slate-700 bg-slate-900 shadow-xl"
+            class="absolute left-0 right-0 top-full z-20 mt-1 max-h-64 overflow-auto rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl"
           >
             {#each searchHits as hit}
               <button
                 type="button"
-                class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-slate-800"
+                class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-neutral-100 dark:bg-neutral-800"
                 onclick={() => openSearchHit(hit)}
               >
                 <span class="font-mono text-[10px] text-emerald-400">{hit.method}</span>
                 <span class="truncate">{hit.name}</span>
-                <span class="ml-auto truncate text-slate-500">{hit.url}</span>
+                <span class="ml-auto truncate text-neutral-500">{hit.url}</span>
               </button>
             {/each}
           </div>
@@ -786,7 +784,7 @@
         >{dark ? "Light" : "Dark"}</button
       >
 
-      <div class="ml-auto text-xs text-slate-500">
+      <div class="ml-auto text-xs text-neutral-500">
         {#if dirty}
           <span class="text-amber-400/80">Saving…</span>
         {:else}
@@ -814,7 +812,7 @@
       </div>
     {:else}
       <div
-        class="flex flex-1 flex-col items-center justify-center gap-3 text-slate-500"
+        class="flex flex-1 flex-col items-center justify-center gap-3 text-neutral-500"
       >
         <p class="text-lg font-medium">No request selected</p>
         <button type="button" class="btn-primary" onclick={handleNewCollection}
@@ -828,7 +826,7 @@
 {#if showEnv}
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
     <div
-      class="max-h-[80vh] w-full max-w-xl overflow-auto rounded-xl border border-slate-700 bg-slate-900 p-4 shadow-2xl"
+      class="max-h-[80vh] w-full max-w-xl overflow-auto rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4 shadow-2xl"
     >
       <div class="mb-3 flex items-center justify-between">
         <h2 class="text-sm font-semibold">Environments</h2>
@@ -897,7 +895,7 @@
 {#if showSettings}
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
     <div
-      class="w-full max-w-lg rounded-xl border border-slate-700 bg-slate-900 p-4 shadow-2xl"
+      class="w-full max-w-lg rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4 shadow-2xl"
     >
       <div class="mb-3 flex items-center justify-between">
         <h2 class="text-sm font-semibold">Settings</h2>
@@ -907,7 +905,7 @@
       </div>
       <div class="space-y-3 text-xs">
         <div>
-          <label class="mb-1 block text-slate-500">Default script engine</label>
+          <label class="mb-1 block text-neutral-500">Default script engine</label>
           <select
             class="input-field w-full"
             value={config.defaultEngine}
@@ -918,7 +916,7 @@
           </select>
         </div>
         <div>
-          <label class="mb-1 block text-slate-500">Proxy mode</label>
+          <label class="mb-1 block text-neutral-500">Proxy mode</label>
           <select
             class="input-field w-full"
             value={config.proxy.mode}
@@ -999,7 +997,7 @@
           Allow script network (reserved)
         </label>
         <div>
-          <label class="mb-1 block text-slate-500">Script timeout (ms)</label>
+          <label class="mb-1 block text-neutral-500">Script timeout (ms)</label>
           <input
             class="input-field w-full"
             type="number"
@@ -1015,7 +1013,7 @@
           />
         </div>
         <div>
-          <label class="mb-1 block text-slate-500">Workspace path</label>
+          <label class="mb-1 block text-neutral-500">Workspace path</label>
           <input
             class="input-field w-full font-mono"
             value={config.workspacePath ?? workspacePath}
@@ -1039,7 +1037,7 @@
 {#if showImport}
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
     <div
-      class="w-full max-w-xl rounded-xl border border-slate-700 bg-slate-900 p-4 shadow-2xl"
+      class="w-full max-w-xl rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4 shadow-2xl"
     >
       <div class="mb-3 flex items-center justify-between">
         <h2 class="text-sm font-semibold">Import</h2>
@@ -1074,7 +1072,7 @@
 {#if showCookies}
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
     <div
-      class="max-h-[80vh] w-full max-w-2xl overflow-auto rounded-xl border border-slate-700 bg-slate-900 p-4 shadow-2xl"
+      class="max-h-[80vh] w-full max-w-2xl overflow-auto rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4 shadow-2xl"
     >
       <div class="mb-3 flex items-center justify-between">
         <h2 class="text-sm font-semibold">Cookies</h2>
@@ -1083,10 +1081,10 @@
         >
       </div>
       {#if cookies.length === 0}
-        <p class="text-sm text-slate-500">No cookies stored.</p>
+        <p class="text-sm text-neutral-500">No cookies stored.</p>
       {:else}
         <table class="w-full text-left text-xs">
-          <thead class="text-slate-500">
+          <thead class="text-neutral-500">
             <tr>
               <th class="pb-2">Name</th>
               <th class="pb-2">Value</th>
@@ -1097,7 +1095,7 @@
           </thead>
           <tbody>
             {#each cookies as c}
-              <tr class="border-t border-slate-800">
+              <tr class="border-t border-app">
                 <td class="py-1 font-mono">{c.name}</td>
                 <td class="py-1 font-mono">
                   <input
@@ -1134,7 +1132,7 @@
 {#if showCodegen}
   <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
     <div
-      class="w-full max-w-xl rounded-xl border border-slate-700 bg-slate-900 p-4 shadow-2xl"
+      class="w-full max-w-xl rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4 shadow-2xl"
     >
       <div class="mb-3 flex items-center justify-between">
         <h2 class="text-sm font-semibold">Code generation</h2>
@@ -1143,7 +1141,7 @@
         >
       </div>
       <pre
-        class="max-h-96 overflow-auto rounded-md border border-slate-800 bg-slate-950 p-3 font-mono text-xs whitespace-pre-wrap"
+        class="max-h-96 overflow-auto rounded-md border border-app bg-white dark:bg-neutral-950 p-3 font-mono text-xs whitespace-pre-wrap"
         >{codegenText}</pre
       >
     </div>

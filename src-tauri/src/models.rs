@@ -221,7 +221,7 @@ fn default_engine() -> String {
 }
 
 fn default_theme() -> String {
-    "dark".into()
+    "light".into()
 }
 
 impl Default for AppConfig {

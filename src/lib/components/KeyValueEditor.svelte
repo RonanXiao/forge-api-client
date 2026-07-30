@@ -43,7 +43,7 @@
 
 <div class="flex flex-col gap-1">
   <div
-    class="grid grid-cols-[28px_1fr_1fr_28px] gap-1 px-1 text-[11px] font-medium uppercase tracking-wide text-slate-500"
+    class="grid grid-cols-[28px_1fr_1fr_28px] gap-1 px-1 text-[11px] font-medium uppercase tracking-wide text-neutral-500"
   >
     <span></span>
     <span>{keyPlaceholder}</span>
@@ -55,7 +55,7 @@
       <label class="flex items-center justify-center">
         <input
           type="checkbox"
-          class="h-3.5 w-3.5 rounded border-slate-600 bg-slate-800 text-indigo-500 focus:ring-indigo-500/40"
+          class="h-3.5 w-3.5 rounded border-neutral-300 bg-white text-[#FF6C37] focus:ring-[#FF6C37]/40 dark:border-neutral-600 dark:bg-neutral-800"
           checked={row.enabled}
           onchange={(e) => update(i, "enabled", e.currentTarget.checked)}
         />
@@ -74,7 +74,7 @@
       />
       <button
         type="button"
-        class="flex h-8 w-7 items-center justify-center rounded text-slate-500 hover:bg-slate-800 hover:text-rose-400"
+        class="flex h-8 w-7 items-center justify-center rounded text-neutral-500 hover:bg-neutral-100 hover:text-rose-500 dark:hover:bg-neutral-800"
         title="Remove"
         onclick={() => remove(i)}
       >

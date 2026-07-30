@@ -1,7 +1,8 @@
 <script lang="ts">
   import { onMount } from "svelte";
+  import { importCurl } from "$lib/api";
   import type { BodyType, EditorTab, HttpRequest } from "$lib/types";
-  import { METHODS } from "$lib/utils";
+  import { emptyAuth, emptyScripts, looksLikeCurl, METHODS } from "$lib/utils";
   import KeyValueEditor from "./KeyValueEditor.svelte";
   import CodeEditor from "./CodeEditor.svelte";
 
@@ -18,7 +19,7 @@
   let {
     request,
     sending,
-    dark = true,
+    dark = false,
     defaultEngine = "rhai",
     onsend,
     onchange,
@@ -27,6 +28,7 @@
 
   let tab = $state<EditorTab>("params");
   let scriptTab = $state<"pre" | "post">("pre");
+  let pasteHint = $state<string | null>(null);
 
   const bodyTypes: { id: BodyType; label: string }[] = [
     { id: "none", label: "None" },
@@ -39,6 +41,54 @@
 
   function patch(partial: Partial<HttpRequest>) {
     onchange({ ...request, ...partial });
+  }
+
+  async function onUrlPaste(e: ClipboardEvent) {
+    const text = e.clipboardData?.getData("text") ?? "";
+    if (!looksLikeCurl(text)) return;
+
+    e.preventDefault();
+    pasteHint = null;
+    try {
+      const parsed = await importCurl(text);
+      const method = (parsed.method?.toUpperCase() ||
+        request.method) as HttpRequest["method"];
+      onchange({
+        ...request,
+        name:
+          request.name === "New Request" || request.name.startsWith("Sample")
+            ? parsed.name || request.name
+            : request.name,
+        method,
+        url: parsed.url || request.url,
+        headers:
+          parsed.headers?.length > 0
+            ? parsed.headers
+            : request.headers,
+        query: parsed.query?.length > 0 ? parsed.query : request.query,
+        body: parsed.body ?? request.body,
+        auth: parsed.auth ?? request.auth ?? emptyAuth(),
+        config: parsed.config ?? request.config,
+        scripts: parsed.scripts ?? request.scripts ?? emptyScripts(),
+      });
+      if (parsed.body?.type && parsed.body.type !== "none") {
+        tab = "body";
+      } else if (parsed.headers?.some((h) => h.key)) {
+        tab = "headers";
+      }
+      pasteHint = "Imported from cURL";
+      setTimeout(() => {
+        pasteHint = null;
+      }, 2500);
+    } catch (err) {
+      console.error(err);
+      // Fallback: paste as plain URL text
+      patch({ url: text.trim() });
+      pasteHint = "cURL parse failed — pasted as text";
+      setTimeout(() => {
+        pasteHint = null;
+      }, 3000);
+    }
   }
 
   onMount(() => {
@@ -54,7 +104,7 @@
 </script>
 
 <div class="flex h-full min-h-0 flex-col">
-  <div class="flex items-center gap-2 border-b border-slate-800/80 p-3">
+  <div class="flex items-center gap-2 border-b border-app p-3">
     <select
       class="input-field w-[110px] shrink-0 font-mono text-sm font-semibold"
       value={request.method}
@@ -67,9 +117,10 @@
     </select>
     <input
       class="input-field min-w-0 flex-1 font-mono text-sm"
-      placeholder={"https://api.example.com/path or {{base}}/path"}
+      placeholder="Enter URL or paste cURL"
       value={request.url}
       oninput={(e) => patch({ url: e.currentTarget.value })}
+      onpaste={onUrlPaste}
     />
     <button
       type="button"
@@ -81,22 +132,25 @@
     </button>
   </div>
 
-  <div class="flex items-center gap-2 border-b border-slate-800/40 px-3 py-2">
+  <div class="flex items-center gap-2 border-b border-app px-3 py-2">
     <input
-      class="input-ghost min-w-0 flex-1 text-sm font-medium text-slate-200"
+      class="input-ghost min-w-0 flex-1 text-sm font-medium"
       placeholder="Request name"
       value={request.name}
       oninput={(e) => patch({ name: e.currentTarget.value })}
     />
+    {#if pasteHint}
+      <span class="text-[11px] font-medium text-[#FF6C37]">{pasteHint}</span>
+    {/if}
     <div class="flex gap-1">
       <button type="button" class="chip" onclick={() => oncodegen?.("curl")}>cURL</button>
       <button type="button" class="chip" onclick={() => oncodegen?.("fetch")}>JS</button>
       <button type="button" class="chip" onclick={() => oncodegen?.("python")}>Python</button>
     </div>
-    <span class="text-[11px] text-slate-500">⌘/Ctrl + Enter</span>
+    <span class="text-[11px] text-neutral-500">⌘/Ctrl + Enter</span>
   </div>
 
-  <div class="flex flex-wrap items-center gap-1 border-b border-slate-800/80 px-3">
+  <div class="flex flex-wrap items-center gap-1 border-b border-app px-3">
     {#each [
       ["params", "Params"],
       ["headers", "Headers"],
@@ -153,7 +207,7 @@
         {/each}
       </div>
       {#if request.body.type === "none"}
-        <p class="py-8 text-center text-sm text-slate-500">This request has no body.</p>
+        <p class="py-8 text-center text-sm text-neutral-500">This request has no body.</p>
       {:else if request.body.type === "json"}
         <CodeEditor
           value={request.body.content}
@@ -180,13 +234,14 @@
           <button
             type="button"
             class="chip {request.auth.type === t ? 'chip-active' : ''}"
-            onclick={() => patch({ auth: { ...request.auth, type: t as typeof request.auth.type } })}
+            onclick={() =>
+              patch({ auth: { ...request.auth, type: t as typeof request.auth.type } })}
             >{t}</button
           >
         {/each}
       </div>
       {#if request.auth.type === "bearer"}
-        <label class="mb-1 block text-xs text-slate-500">Token</label>
+        <span class="mb-1 block text-xs text-neutral-500">Token</span>
         <input
           class="input-field w-full font-mono text-xs"
           value={request.auth.token}
@@ -196,7 +251,7 @@
       {:else if request.auth.type === "basic"}
         <div class="grid grid-cols-2 gap-2">
           <div>
-            <label class="mb-1 block text-xs text-slate-500">Username</label>
+            <span class="mb-1 block text-xs text-neutral-500">Username</span>
             <input
               class="input-field w-full font-mono text-xs"
               value={request.auth.username}
@@ -205,7 +260,7 @@
             />
           </div>
           <div>
-            <label class="mb-1 block text-xs text-slate-500">Password</label>
+            <span class="mb-1 block text-xs text-neutral-500">Password</span>
             <input
               class="input-field w-full font-mono text-xs"
               type="password"
@@ -218,7 +273,7 @@
       {:else if request.auth.type === "apikey"}
         <div class="grid grid-cols-3 gap-2">
           <div>
-            <label class="mb-1 block text-xs text-slate-500">Key</label>
+            <span class="mb-1 block text-xs text-neutral-500">Key</span>
             <input
               class="input-field w-full font-mono text-xs"
               value={request.auth.key}
@@ -227,7 +282,7 @@
             />
           </div>
           <div>
-            <label class="mb-1 block text-xs text-slate-500">Value</label>
+            <span class="mb-1 block text-xs text-neutral-500">Value</span>
             <input
               class="input-field w-full font-mono text-xs"
               value={request.auth.value}
@@ -236,7 +291,7 @@
             />
           </div>
           <div>
-            <label class="mb-1 block text-xs text-slate-500">Add to</label>
+            <span class="mb-1 block text-xs text-neutral-500">Add to</span>
             <select
               class="input-field w-full text-xs"
               value={request.auth.addTo}
@@ -254,7 +309,7 @@
           </div>
         </div>
       {:else}
-        <p class="text-sm text-slate-500">No authentication.</p>
+        <p class="text-sm text-neutral-500">No authentication.</p>
       {/if}
     {:else if tab === "scripts"}
       <div class="mb-2 flex items-center gap-2">
@@ -294,7 +349,7 @@
           onchange={(preRequest) =>
             patch({ scripts: { ...request.scripts, preRequest } })}
         />
-        <p class="mt-2 text-[11px] text-slate-500">
+        <p class="mt-2 text-[11px] text-neutral-500">
           API: req, env.get/set, fs.read/write/append, tools.*, print/console.log
         </p>
       {:else}
@@ -306,14 +361,14 @@
           onchange={(postResponse) =>
             patch({ scripts: { ...request.scripts, postResponse } })}
         />
-        <p class="mt-2 text-[11px] text-slate-500">
+        <p class="mt-2 text-[11px] text-neutral-500">
           API: res, assert_status, assert_body_field, assert_duration_lt, env, fs, tools
         </p>
       {/if}
     {:else if tab === "settings"}
       <div class="grid max-w-md grid-cols-2 gap-3">
         <div>
-          <label class="mb-1 block text-xs text-slate-500">Timeout (ms)</label>
+          <span class="mb-1 block text-xs text-neutral-500">Timeout (ms)</span>
           <input
             class="input-field w-full text-xs"
             type="number"
@@ -328,7 +383,7 @@
           />
         </div>
         <div>
-          <label class="mb-1 block text-xs text-slate-500">Max redirects</label>
+          <span class="mb-1 block text-xs text-neutral-500">Max redirects</span>
           <input
             class="input-field w-full text-xs"
             type="number"
@@ -342,7 +397,7 @@
               })}
           />
         </div>
-        <label class="col-span-2 flex items-center gap-2 text-xs text-slate-300">
+        <label class="col-span-2 flex items-center gap-2 text-xs text-neutral-700 dark:text-neutral-300">
           <input
             type="checkbox"
             checked={request.config.followRedirects !== false}

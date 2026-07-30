@@ -17,7 +17,7 @@
   let {
     value = $bindable(""),
     language = "text",
-    dark = true,
+    dark = false,
     minHeight = "180px",
     onchange,
   }: Props = $props();
@@ -75,4 +75,4 @@
   });
 </script>
 
-<div class="overflow-hidden rounded-md border border-slate-700/80" bind:this={host}></div>
+<div class="overflow-hidden rounded-md border border-neutral-200 dark:border-neutral-700" bind:this={host}></div>
