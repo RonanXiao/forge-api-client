@@ -9,8 +9,8 @@
     formatBytes,
     formatDuration,
     statusBadgeBg,
-    tryPrettyJson,
   } from "$lib/utils";
+  import ResponseBodyViewer from "./ResponseBodyViewer.svelte";
 
   interface Props {
     response: HttpResponse | null;
@@ -18,6 +18,7 @@
     sending: boolean;
     logs?: string[];
     assertions?: AssertionResult[];
+    dark?: boolean;
   }
 
   let {
@@ -26,28 +27,21 @@
     sending,
     logs = [],
     assertions = [],
+    dark = false,
   }: Props = $props();
 
   let tab = $state<ResponseTab>("body");
   let view = $state<BodyView>("pretty");
   let search = $state("");
+  let bodyViewer = $state<ReturnType<typeof ResponseBodyViewer> | null>(null);
 
-  let displayBody = $derived.by(() => {
-    if (!response) return "";
-    if (view === "pretty") {
-      return tryPrettyJson(response.body) ?? response.body;
-    }
-    return response.body;
-  });
+  function collapseAll() {
+    bodyViewer?.collapseAll();
+  }
 
-  let filteredBody = $derived.by(() => {
-    if (!search.trim()) return displayBody;
-    const q = search.toLowerCase();
-    return displayBody
-      .split("\n")
-      .filter((line) => line.toLowerCase().includes(q))
-      .join("\n");
-  });
+  function expandAll() {
+    bodyViewer?.expandAll();
+  }
 </script>
 
 <div class="flex h-full min-h-0 flex-col border-t border-app bg-neutral-50/80 dark:bg-neutral-950/40">
@@ -65,8 +59,12 @@
         {response.status}
         {response.statusText}
       </span>
-      <span class="text-xs text-neutral-500 dark:text-neutral-400">{formatDuration(response.durationMs)}</span>
-      <span class="text-xs text-neutral-500 dark:text-neutral-400">{formatBytes(response.bodySize)}</span>
+      <span class="text-xs text-neutral-500 dark:text-neutral-400"
+        >{formatDuration(response.durationMs)}</span
+      >
+      <span class="text-xs text-neutral-500 dark:text-neutral-400"
+        >{formatBytes(response.bodySize)}</span
+      >
     {:else if sending}
       <span class="text-xs text-[#FF6C37]">Waiting for response…</span>
     {:else if error}
@@ -91,10 +89,10 @@
     </div>
   </div>
 
-  <div class="min-h-0 flex-1 overflow-auto p-3">
+  <div class="flex min-h-0 flex-1 flex-col overflow-hidden p-3">
     {#if error}
       <div
-        class="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 font-mono text-sm text-rose-300"
+        class="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 font-mono text-sm text-rose-600 dark:text-rose-300"
       >
         {error}
       </div>
@@ -111,7 +109,10 @@
       {#if logs.length === 0}
         <p class="text-sm text-neutral-500">No script logs.</p>
       {:else}
-        <pre class="font-mono text-xs text-neutral-700 dark:text-neutral-300 whitespace-pre-wrap">{logs.join("\n")}</pre>
+        <pre
+          class="font-mono text-xs text-neutral-700 dark:text-neutral-300 whitespace-pre-wrap"
+          >{logs.join("\n")}</pre
+        >
       {/if}
     {:else if tab === "tests"}
       {#if assertions.length === 0}
@@ -121,8 +122,8 @@
           {#each assertions as a}
             <li
               class="rounded-md border px-2 py-1.5 text-xs {a.passed
-                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                : 'border-rose-500/30 bg-rose-500/10 text-rose-300'}"
+                ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+                : 'border-rose-500/30 bg-rose-500/10 text-rose-700 dark:text-rose-300'}"
             >
               <span class="font-semibold">{a.passed ? "PASS" : "FAIL"}</span>
               · {a.name}: {a.message}
@@ -131,7 +132,9 @@
         </ul>
       {/if}
     {:else if !response}
-      <div class="flex h-full items-center justify-center text-sm text-neutral-400 dark:text-neutral-600">
+      <div
+        class="flex h-full items-center justify-center text-sm text-neutral-400 dark:text-neutral-600"
+      >
         Response will appear here
       </div>
     {:else if tab === "headers"}
@@ -145,14 +148,19 @@
         <tbody>
           {#each response.headers as h}
             <tr class="border-t border-app">
-              <td class="py-1.5 pr-4 font-mono text-neutral-700 dark:text-neutral-300">{h.key}</td>
-              <td class="py-1.5 font-mono text-neutral-500 dark:text-neutral-400 break-all">{h.value}</td>
+              <td class="py-1.5 pr-4 font-mono text-neutral-700 dark:text-neutral-300"
+                >{h.key}</td
+              >
+              <td
+                class="py-1.5 font-mono text-neutral-500 dark:text-neutral-400 break-all"
+                >{h.value}</td
+              >
             </tr>
           {/each}
         </tbody>
       </table>
     {:else}
-      <div class="mb-2 flex items-center gap-2">
+      <div class="mb-2 flex flex-wrap items-center gap-2">
         <button
           type="button"
           class="chip {view === 'pretty' ? 'chip-active' : ''}"
@@ -163,16 +171,29 @@
           class="chip {view === 'raw' ? 'chip-active' : ''}"
           onclick={() => (view = "raw")}>Raw</button
         >
+        {#if view === "pretty"}
+          <button type="button" class="chip" title="Collapse all" onclick={collapseAll}
+            >Collapse all</button
+          >
+          <button type="button" class="chip" title="Expand all" onclick={expandAll}
+            >Expand all</button
+          >
+        {/if}
         <input
           class="input-field ml-auto w-48 font-mono text-xs"
           placeholder="Search in body…"
           bind:value={search}
         />
       </div>
-      <pre
-        class="overflow-auto rounded-lg border border-app bg-neutral-50 dark:bg-neutral-900/50 p-3 font-mono text-xs leading-relaxed text-neutral-800 dark:text-neutral-200 whitespace-pre-wrap break-all"
-        >{filteredBody || "(empty body)"}</pre
-      >
+      <div class="min-h-0 flex-1">
+        <ResponseBodyViewer
+          bind:this={bodyViewer}
+          body={response.body}
+          pretty={view === "pretty"}
+          {search}
+          {dark}
+        />
+      </div>
     {/if}
   </div>
 </div>

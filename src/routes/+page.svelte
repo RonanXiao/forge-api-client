@@ -829,7 +829,7 @@
           />
         </div>
         <div class="min-h-0 flex-1">
-          <ResponseViewer {response} {error} {sending} {logs} {assertions} />
+          <ResponseViewer {response} {error} {sending} {logs} {assertions} {dark} />
         </div>
       </div>
     {:else}
