@@ -13,7 +13,7 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "bash scripts/tauri-build.sh"
   },
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "dependencies": {
     "@codemirror/commands": "^6.10.4",
     "@codemirror/lang-javascript": "^6.2.5",

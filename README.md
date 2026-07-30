@@ -6,6 +6,22 @@
 
 当前版本：`v0.0.1-beta`（GitHub Releases）
 
+## 许可证 / License
+
+**个人 / 非商业使用免费**；**商业使用需付费授权**。
+
+| 用途 | 协议 | 说明 |
+|------|------|------|
+| 个人、学习、爱好、非商业组织等 | [PolyForm Noncommercial 1.0.0](./LICENSE) | 可使用、修改；分发需遵守该协议 |
+| 公司业务、商业产品、有偿服务等 | 单独 **Commercial License** | 见 [COMMERCIAL.md](./COMMERCIAL.md) |
+
+商用授权联系：
+
+- 邮箱：[wrdfeng@gmail.com](mailto:wrdfeng@gmail.com)
+- 私信：联系作者（GitHub / 社交账号私信均可）
+
+> 本仓库为 **源码可见（source-available）** 双授权模式，**不是** MIT/Apache 等允许免费商用的宽松开源协议。完整条款以 `LICENSE` 与商用合同为准。
+
 ## 功能概览
 
 - HTTP：全部常用方法、Query/Headers、Body（none / form-data / x-www-form-urlencoded / raw / binary，对齐 Postman）

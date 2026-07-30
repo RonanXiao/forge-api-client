@@ -4,6 +4,7 @@ version = "0.0.1-beta"
 description = "Forge — a fast, local-first API client"
 authors = ["you"]
 edition = "2021"
+license-file = "../LICENSE"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
