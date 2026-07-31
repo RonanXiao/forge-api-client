@@ -77,6 +77,8 @@
   let assertions = $state<AssertionResult[]>([]);
   /** Main content: request workspace vs environments page */
   let mainView = $state<"request" | "environments">("request");
+  /** Sidebar tab: Collections | History | Env */
+  let sidebarPanel = $state<"collections" | "history" | "env">("collections");
   /** When set, show delete-environment confirmation for this env id */
   let envDeleteId = $state<string | null>(null);
   let showSettings = $state(false);
@@ -161,7 +163,13 @@
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "l") {
         e.preventDefault();
         if (envDeleteId) envDeleteId = null;
-        mainView = mainView === "environments" ? "request" : "environments";
+        if (mainView === "environments") {
+          mainView = "request";
+          sidebarPanel = "collections";
+        } else {
+          mainView = "environments";
+          sidebarPanel = "env";
+        }
       }
       if (e.key === "Escape") {
         // Confirm dialog first, then leave Environments page
@@ -173,6 +181,7 @@
         if (mainView === "environments") {
           e.preventDefault();
           mainView = "request";
+          sidebarPanel = "collections";
           return;
         }
         if (showCodegen) {
@@ -256,6 +265,8 @@
   function selectItem(collectionId: string, item: CollectionItem) {
     selectedCollectionId = collectionId;
     selectedItemId = item.id;
+    mainView = "request";
+    sidebarPanel = "collections";
     if (item.request) {
       // deepClone: Svelte $state proxies throw with structuredClone
       request = deepClone(normalizeRequest(item.request));
@@ -266,6 +277,22 @@
     error = null;
     logs = [];
     assertions = [];
+  }
+
+  function onSidebarPanel(p: "collections" | "history" | "env") {
+    sidebarPanel = p;
+    envDeleteId = null;
+    if (p === "env") {
+      mainView = "environments";
+    } else {
+      mainView = "request";
+    }
+  }
+
+  function selectEnvFromSidebar(id: string) {
+    mainView = "environments";
+    sidebarPanel = "env";
+    void switchEnv(id);
   }
 
   function onRequestChange(next: HttpRequest) {
@@ -692,6 +719,8 @@
 
   function handleSelectHistory(entry: HistoryEntry) {
     const r = entry.request;
+    mainView = "request";
+    sidebarPanel = "history";
     request = normalizeRequest({
       id: request?.id ?? entry.id,
       name: request?.name ?? `${entry.method} ${entry.url}`,
@@ -744,6 +773,8 @@
         { id, name, variables: [emptyKeyValue()] },
       ],
     };
+    mainView = "environments";
+    sidebarPanel = "env";
     await switchEnv(id);
   }
 
@@ -866,24 +897,29 @@
 <div
   class="flex h-screen w-screen overflow-hidden bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100"
 >
-  {#if mainView === "request"}
-    <Sidebar
-      {collections}
-      {history}
-      selectedId={selectedItemId}
-      {workspacePath}
-      onselect={selectItem}
-      addRequest={handleNewRequest}
-      addFolder={handleNewFolder}
-      addCollection={handleNewCollection}
-      removeCollection={handleDeleteCollection}
-      onrename={handleRename}
-      ondeleteItem={handleDeleteItem}
-      onreorder={handleReorder}
-      onselectHistory={handleSelectHistory}
-      onclearHistory={handleClearHistory}
-    />
-  {/if}
+  <Sidebar
+    {collections}
+    {history}
+    environments={envFile.environments}
+    activeEnvId={config.activeEnvId ?? envFile.activeId ?? null}
+    selectedId={selectedItemId}
+    {workspacePath}
+    panel={sidebarPanel}
+    onpanel={onSidebarPanel}
+    onselect={selectItem}
+    addRequest={handleNewRequest}
+    addFolder={handleNewFolder}
+    addCollection={handleNewCollection}
+    removeCollection={handleDeleteCollection}
+    onrename={handleRename}
+    ondeleteItem={handleDeleteItem}
+    onreorder={handleReorder}
+    onselectHistory={handleSelectHistory}
+    onclearHistory={handleClearHistory}
+    onselectEnv={selectEnvFromSidebar}
+    onaddEnv={() => void addEnvironment()}
+    ondeleteEnv={requestDeleteEnv}
+  />
 
   <main class="flex min-w-0 flex-1 flex-col">
     {#if error}
@@ -912,67 +948,52 @@
         class="input-field ml-3 w-32 text-xs"
         value={config.activeEnvId ?? envFile.activeId ?? ""}
         onchange={(e) => switchEnv(e.currentTarget.value)}
+        title="Active environment"
       >
         {#each envFile.environments as env}
           <option value={env.id}>{env.name}</option>
         {/each}
       </select>
-      <button
-        type="button"
-        class="chip {mainView === 'environments' ? 'chip-active' : ''}"
-        title="Environments (⌘L)"
-        onclick={() => {
-          envDeleteId = null;
-          mainView = mainView === "environments" ? "request" : "environments";
-        }}>Env</button
+
+      <div class="relative ml-2 min-w-0 flex-1 max-w-md">
+        <input
+          class="input-field w-full text-xs"
+          placeholder="Search requests… (⌘K)"
+          bind:value={searchQ}
+          oninput={() => doSearch()}
+          onfocus={() => (showSearch = true)}
+        />
+        {#if showSearch && searchHits.length > 0}
+          <div
+            class="absolute left-0 right-0 top-full z-20 mt-1 max-h-64 overflow-auto rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl"
+          >
+            {#each searchHits as hit}
+              <button
+                type="button"
+                class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-neutral-100 dark:bg-neutral-800"
+                onclick={() => openSearchHit(hit)}
+              >
+                <span class="font-mono text-[10px] text-emerald-400">{hit.method}</span>
+                <span class="truncate">{hit.name}</span>
+                <span class="ml-auto truncate text-neutral-500">{hit.url}</span>
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </div>
+
+      <button type="button" class="chip" onclick={() => (showImport = true)}
+        >Import Postman</button
       >
-
-      {#if mainView === "request"}
-        <div class="relative ml-2 min-w-0 flex-1 max-w-md">
-          <input
-            class="input-field w-full text-xs"
-            placeholder="Search requests… (⌘K)"
-            bind:value={searchQ}
-            oninput={() => doSearch()}
-            onfocus={() => (showSearch = true)}
-          />
-          {#if showSearch && searchHits.length > 0}
-            <div
-              class="absolute left-0 right-0 top-full z-20 mt-1 max-h-64 overflow-auto rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl"
-            >
-              {#each searchHits as hit}
-                <button
-                  type="button"
-                  class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-neutral-100 dark:bg-neutral-800"
-                  onclick={() => openSearchHit(hit)}
-                >
-                  <span class="font-mono text-[10px] text-emerald-400">{hit.method}</span>
-                  <span class="truncate">{hit.name}</span>
-                  <span class="ml-auto truncate text-neutral-500">{hit.url}</span>
-                </button>
-              {/each}
-            </div>
-          {/if}
-        </div>
-
-        <button type="button" class="chip" onclick={() => (showImport = true)}
-          >Import Postman</button
-        >
-        <button type="button" class="chip" onclick={() => (showCookies = true)}
-          >Cookies</button
-        >
-        <button type="button" class="chip" onclick={() => (showSettings = true)}
-          >Settings</button
-        >
-        <button type="button" class="chip" onclick={toggleTheme}
-          >{dark ? "Light" : "Dark"}</button
-        >
-      {:else}
-        <div class="ml-2 flex-1"></div>
-        <button type="button" class="chip" onclick={toggleTheme}
-          >{dark ? "Light" : "Dark"}</button
-        >
-      {/if}
+      <button type="button" class="chip" onclick={() => (showCookies = true)}
+        >Cookies</button
+      >
+      <button type="button" class="chip" onclick={() => (showSettings = true)}
+        >Settings</button
+      >
+      <button type="button" class="chip" onclick={toggleTheme}
+        >{dark ? "Light" : "Dark"}</button
+      >
 
       <div class="ml-auto text-xs text-neutral-500">
         {#if dirty}
@@ -990,12 +1011,7 @@
           activeEnvId={config.activeEnvId ?? envFile.activeId ?? null}
           onswitch={(id) => void switchEnv(id)}
           onchange={(f) => void onEnvFileChange(f)}
-          onadd={() => void addEnvironment()}
           ondelete={requestDeleteEnv}
-          onclose={() => {
-            envDeleteId = null;
-            mainView = "request";
-          }}
         />
       </div>
     {:else if request}

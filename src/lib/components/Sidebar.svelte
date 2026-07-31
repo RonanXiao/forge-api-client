@@ -1,12 +1,24 @@
 <script lang="ts">
-  import type { Collection, CollectionItem, HistoryEntry } from "$lib/types";
+  import type {
+    Collection,
+    CollectionItem,
+    Environment,
+    HistoryEntry,
+  } from "$lib/types";
   import { METHOD_COLORS } from "$lib/utils";
+
+  export type SidebarPanel = "collections" | "history" | "env";
 
   interface Props {
     collections: Collection[];
     history: HistoryEntry[];
+    environments?: Environment[];
+    activeEnvId?: string | null;
     selectedId: string | null;
     workspacePath: string;
+    /** Controlled panel tab — Collections / History / Env */
+    panel?: SidebarPanel;
+    onpanel: (panel: SidebarPanel) => void;
     onselect: (collectionId: string, item: CollectionItem) => void;
     /** Avoid on* prop names — Svelte can treat them oddly as event handlers */
     addRequest: (collectionId: string, parentId?: string | null) => void;
@@ -23,13 +35,20 @@
     ) => void;
     onselectHistory: (entry: HistoryEntry) => void;
     onclearHistory: () => void;
+    onselectEnv?: (id: string) => void;
+    onaddEnv?: () => void;
+    ondeleteEnv?: (id: string) => void;
   }
 
   let {
     collections,
     history,
+    environments = [],
+    activeEnvId = null,
     selectedId,
     workspacePath,
+    panel = "collections",
+    onpanel,
     onselect,
     addRequest,
     addFolder,
@@ -40,13 +59,19 @@
     onreorder,
     onselectHistory,
     onclearHistory,
+    onselectEnv,
+    onaddEnv,
+    ondeleteEnv,
   }: Props = $props();
 
-  let panel = $state<"collections" | "history">("collections");
   let expanded = $state<Record<string, boolean>>({});
   let editingId = $state<string | null>(null);
   let editName = $state("");
   let dragId = $state<string | null>(null);
+
+  function setPanel(p: SidebarPanel) {
+    onpanel(p);
+  }
 
   function toggle(id: string) {
     expanded = { ...expanded, [id]: !expanded[id] };
@@ -70,20 +95,27 @@
 <aside
   class="flex h-full w-64 shrink-0 flex-col border-r border-app bg-neutral-50 dark:bg-neutral-950"
 >
-  <div class="flex items-center gap-1 border-b border-app p-2">
+  <div class="flex items-center gap-0.5 border-b border-app p-1.5">
     <button
       type="button"
-      class="tab-btn flex-1 {panel === 'collections' ? 'tab-active' : ''}"
-      onclick={() => (panel = "collections")}
+      class="tab-btn flex-1 px-1 text-[11px] {panel === 'collections' ? 'tab-active' : ''}"
+      onclick={() => setPanel("collections")}
     >
       Collections
     </button>
     <button
       type="button"
-      class="tab-btn flex-1 {panel === 'history' ? 'tab-active' : ''}"
-      onclick={() => (panel = "history")}
+      class="tab-btn flex-1 px-1 text-[11px] {panel === 'history' ? 'tab-active' : ''}"
+      onclick={() => setPanel("history")}
     >
       History
+    </button>
+    <button
+      type="button"
+      class="tab-btn flex-1 px-1 text-[11px] {panel === 'env' ? 'tab-active' : ''}"
+      onclick={() => setPanel("env")}
+    >
+      Env
     </button>
   </div>
 
@@ -162,7 +194,7 @@
           {/if}
         </div>
       {/each}
-    {:else}
+    {:else if panel === "history"}
       <div class="mb-2 flex items-center justify-between px-1">
         <span class="text-[11px] font-semibold uppercase tracking-wider text-neutral-500"
           >Recent</span
@@ -193,6 +225,61 @@
             </div>
           </div>
         </button>
+      {/each}
+    {:else}
+      <!-- Env list -->
+      <div class="mb-2 flex items-center justify-between px-1">
+        <span class="text-[11px] font-semibold uppercase tracking-wider text-neutral-500"
+          >Environments</span
+        >
+        <button
+          type="button"
+          class="icon-btn text-xs font-bold text-[#FF6C37]"
+          title="New environment"
+          onclick={() => onaddEnv?.()}>+</button
+        >
+      </div>
+      {#if environments.length === 0}
+        <p class="px-2 py-6 text-center text-xs text-neutral-500">
+          No environments yet.
+        </p>
+      {/if}
+      {#each environments as env (env.id)}
+        <div
+          class="group mb-0.5 flex items-center gap-0.5 rounded-md
+            {env.id === activeEnvId
+            ? 'bg-[#FF6C37]/12'
+            : 'hover:bg-neutral-100 dark:hover:bg-neutral-800/60'}"
+        >
+          <button
+            type="button"
+            class="min-w-0 flex-1 truncate px-2.5 py-2 text-left text-sm
+              {env.id === activeEnvId
+              ? 'font-medium text-neutral-900 dark:text-white'
+              : 'text-neutral-700 dark:text-neutral-300'}"
+            onclick={() => onselectEnv?.(env.id)}
+          >
+            <span class="flex items-center gap-2">
+              <span
+                class="h-1.5 w-1.5 shrink-0 rounded-full
+                  {env.id === activeEnvId ? 'bg-[#FF6C37]' : 'bg-neutral-300 dark:bg-neutral-600'}"
+              ></span>
+              <span class="truncate">{env.name || "Untitled"}</span>
+            </span>
+            <span class="mt-0.5 block pl-3.5 text-[10px] text-neutral-400">
+              {env.variables.filter((v) => v.key?.trim()).length} variables
+            </span>
+          </button>
+          <button
+            type="button"
+            class="mr-1 hidden h-7 w-7 shrink-0 items-center justify-center rounded text-neutral-400 group-hover:inline-flex hover:bg-rose-50 hover:text-rose-500 dark:hover:bg-rose-950/40"
+            title="Delete environment"
+            onclick={(e) => {
+              e.stopPropagation();
+              ondeleteEnv?.(env.id);
+            }}>×</button
+          >
+        </div>
       {/each}
     {/if}
   </div>
