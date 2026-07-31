@@ -31,6 +31,7 @@
   import RequestEditor from "$lib/components/RequestEditor.svelte";
   import ResponseViewer from "$lib/components/ResponseViewer.svelte";
   import KeyValueEditor from "$lib/components/KeyValueEditor.svelte";
+  import EnvironmentsPage from "$lib/components/EnvironmentsPage.svelte";
   import type {
     AppConfig,
     AssertionResult,
@@ -74,7 +75,8 @@
   let cookies = $state<CookieEntry[]>([]);
   let logs = $state<string[]>([]);
   let assertions = $state<AssertionResult[]>([]);
-  let showEnv = $state(false);
+  /** Main content: request workspace vs environments page */
+  let mainView = $state<"request" | "environments">("request");
   /** When set, show delete-environment confirmation for this env id */
   let envDeleteId = $state<string | null>(null);
   let showSettings = $state(false);
@@ -159,18 +161,18 @@
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "l") {
         e.preventDefault();
         if (envDeleteId) envDeleteId = null;
-        showEnv = !showEnv;
+        mainView = mainView === "environments" ? "request" : "environments";
       }
       if (e.key === "Escape") {
-        // Confirm dialog first, then Environments modal
+        // Confirm dialog first, then leave Environments page
         if (envDeleteId) {
           e.preventDefault();
           envDeleteId = null;
           return;
         }
-        if (showEnv) {
+        if (mainView === "environments") {
           e.preventDefault();
-          showEnv = false;
+          mainView = "request";
           return;
         }
         if (showCodegen) {
@@ -727,6 +729,24 @@
     await saveEnvironments(envFile);
   }
 
+  async function onEnvFileChange(next: EnvironmentFile) {
+    envFile = next;
+    await persistEnv();
+  }
+
+  async function addEnvironment() {
+    const id = await newId();
+    const name = `env${envFile.environments.length + 1}`;
+    envFile = {
+      ...envFile,
+      environments: [
+        ...envFile.environments,
+        { id, name, variables: [emptyKeyValue()] },
+      ],
+    };
+    await switchEnv(id);
+  }
+
   function requestDeleteEnv(id: string) {
     envDeleteId = id;
   }
@@ -846,22 +866,24 @@
 <div
   class="flex h-screen w-screen overflow-hidden bg-white text-neutral-900 dark:bg-neutral-950 dark:text-neutral-100"
 >
-  <Sidebar
-    {collections}
-    {history}
-    selectedId={selectedItemId}
-    {workspacePath}
-    onselect={selectItem}
-    addRequest={handleNewRequest}
-    addFolder={handleNewFolder}
-    addCollection={handleNewCollection}
-    removeCollection={handleDeleteCollection}
-    onrename={handleRename}
-    ondeleteItem={handleDeleteItem}
-    onreorder={handleReorder}
-    onselectHistory={handleSelectHistory}
-    onclearHistory={handleClearHistory}
-  />
+  {#if mainView === "request"}
+    <Sidebar
+      {collections}
+      {history}
+      selectedId={selectedItemId}
+      {workspacePath}
+      onselect={selectItem}
+      addRequest={handleNewRequest}
+      addFolder={handleNewFolder}
+      addCollection={handleNewCollection}
+      removeCollection={handleDeleteCollection}
+      onrename={handleRename}
+      ondeleteItem={handleDeleteItem}
+      onreorder={handleReorder}
+      onselectHistory={handleSelectHistory}
+      onclearHistory={handleClearHistory}
+    />
+  {/if}
 
   <main class="flex min-w-0 flex-1 flex-col">
     {#if error}
@@ -895,47 +917,62 @@
           <option value={env.id}>{env.name}</option>
         {/each}
       </select>
-      <button type="button" class="chip" onclick={() => (showEnv = true)}>Env</button>
+      <button
+        type="button"
+        class="chip {mainView === 'environments' ? 'chip-active' : ''}"
+        title="Environments (⌘L)"
+        onclick={() => {
+          envDeleteId = null;
+          mainView = mainView === "environments" ? "request" : "environments";
+        }}>Env</button
+      >
 
-      <div class="relative ml-2 min-w-0 flex-1 max-w-md">
-        <input
-          class="input-field w-full text-xs"
-          placeholder="Search requests… (⌘K)"
-          bind:value={searchQ}
-          oninput={() => doSearch()}
-          onfocus={() => (showSearch = true)}
-        />
-        {#if showSearch && searchHits.length > 0}
-          <div
-            class="absolute left-0 right-0 top-full z-20 mt-1 max-h-64 overflow-auto rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl"
-          >
-            {#each searchHits as hit}
-              <button
-                type="button"
-                class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-neutral-100 dark:bg-neutral-800"
-                onclick={() => openSearchHit(hit)}
-              >
-                <span class="font-mono text-[10px] text-emerald-400">{hit.method}</span>
-                <span class="truncate">{hit.name}</span>
-                <span class="ml-auto truncate text-neutral-500">{hit.url}</span>
-              </button>
-            {/each}
-          </div>
-        {/if}
-      </div>
+      {#if mainView === "request"}
+        <div class="relative ml-2 min-w-0 flex-1 max-w-md">
+          <input
+            class="input-field w-full text-xs"
+            placeholder="Search requests… (⌘K)"
+            bind:value={searchQ}
+            oninput={() => doSearch()}
+            onfocus={() => (showSearch = true)}
+          />
+          {#if showSearch && searchHits.length > 0}
+            <div
+              class="absolute left-0 right-0 top-full z-20 mt-1 max-h-64 overflow-auto rounded-md border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 shadow-xl"
+            >
+              {#each searchHits as hit}
+                <button
+                  type="button"
+                  class="flex w-full items-center gap-2 px-3 py-2 text-left text-xs hover:bg-neutral-100 dark:bg-neutral-800"
+                  onclick={() => openSearchHit(hit)}
+                >
+                  <span class="font-mono text-[10px] text-emerald-400">{hit.method}</span>
+                  <span class="truncate">{hit.name}</span>
+                  <span class="ml-auto truncate text-neutral-500">{hit.url}</span>
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </div>
 
-      <button type="button" class="chip" onclick={() => (showImport = true)}
-        >Import Postman</button
-      >
-      <button type="button" class="chip" onclick={() => (showCookies = true)}
-        >Cookies</button
-      >
-      <button type="button" class="chip" onclick={() => (showSettings = true)}
-        >Settings</button
-      >
-      <button type="button" class="chip" onclick={toggleTheme}
-        >{dark ? "Light" : "Dark"}</button
-      >
+        <button type="button" class="chip" onclick={() => (showImport = true)}
+          >Import Postman</button
+        >
+        <button type="button" class="chip" onclick={() => (showCookies = true)}
+          >Cookies</button
+        >
+        <button type="button" class="chip" onclick={() => (showSettings = true)}
+          >Settings</button
+        >
+        <button type="button" class="chip" onclick={toggleTheme}
+          >{dark ? "Light" : "Dark"}</button
+        >
+      {:else}
+        <div class="ml-2 flex-1"></div>
+        <button type="button" class="chip" onclick={toggleTheme}
+          >{dark ? "Light" : "Dark"}</button
+        >
+      {/if}
 
       <div class="ml-auto text-xs text-neutral-500">
         {#if dirty}
@@ -946,7 +983,22 @@
       </div>
     </header>
 
-    {#if request}
+    {#if mainView === "environments"}
+      <div class="min-h-0 flex-1">
+        <EnvironmentsPage
+          {envFile}
+          activeEnvId={config.activeEnvId ?? envFile.activeId ?? null}
+          onswitch={(id) => void switchEnv(id)}
+          onchange={(f) => void onEnvFileChange(f)}
+          onadd={() => void addEnvironment()}
+          ondelete={requestDeleteEnv}
+          onclose={() => {
+            envDeleteId = null;
+            mainView = "request";
+          }}
+        />
+      </div>
+    {:else if request}
       <div class="flex min-h-0 flex-1 flex-col">
         <div class="min-h-0 flex-[1.1]">
           <RequestEditor
@@ -975,120 +1027,6 @@
     {/if}
   </main>
 </div>
-
-{#if showEnv}
-  <!-- backdrop click closes env (unless confirm open) -->
-  <div
-    class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-    role="presentation"
-    onclick={(e) => {
-      if (e.target === e.currentTarget && !envDeleteId) showEnv = false;
-    }}
-  >
-    <div
-      class="max-h-[80vh] w-full max-w-xl overflow-auto rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4 shadow-2xl"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="env-dialog-title"
-    >
-      <div class="mb-3 flex items-center justify-between">
-        <h2 id="env-dialog-title" class="text-sm font-semibold">Environments</h2>
-        <button
-          type="button"
-          class="icon-btn"
-          title="Close (Esc)"
-          onclick={() => {
-            envDeleteId = null;
-            showEnv = false;
-          }}>×</button
-        >
-      </div>
-      <div class="mb-3 flex flex-wrap items-center gap-2">
-        {#each envFile.environments as env}
-          <div class="group flex items-center">
-            <button
-              type="button"
-              class="chip rounded-r-none {env.id === (config.activeEnvId ?? envFile.activeId)
-                ? 'chip-active'
-                : ''}"
-              onclick={() => switchEnv(env.id)}>{env.name}</button
-            >
-            <button
-              type="button"
-              class="chip rounded-l-none border-l-0 px-1.5 text-neutral-400 hover:bg-rose-50 hover:text-rose-500 dark:hover:bg-rose-950/40"
-              title="Delete environment"
-              onclick={(e) => {
-                e.stopPropagation();
-                requestDeleteEnv(env.id);
-              }}>×</button
-            >
-          </div>
-        {/each}
-        <button
-          type="button"
-          class="chip"
-          onclick={async () => {
-            const id = await newId();
-            envFile = {
-              ...envFile,
-              environments: [
-                ...envFile.environments,
-                {
-                  id,
-                  name: `env${envFile.environments.length + 1}`,
-                  variables: [emptyKeyValue()],
-                },
-              ],
-            };
-            await switchEnv(id);
-          }}>+ Env</button
-        >
-      </div>
-      {#if activeEnv}
-        <div class="mb-2 flex items-center gap-2">
-          <input
-            class="input-field min-w-0 flex-1 text-sm"
-            value={activeEnv.name}
-            oninput={(e) => {
-              const name = e.currentTarget.value;
-              envFile = {
-                ...envFile,
-                environments: envFile.environments.map((en) =>
-                  en.id === activeEnv!.id ? { ...en, name } : en,
-                ),
-              };
-            }}
-            onchange={persistEnv}
-          />
-          <button
-            type="button"
-            class="chip shrink-0 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40"
-            title="Delete this environment"
-            onclick={() => requestDeleteEnv(activeEnv!.id)}>Delete</button
-          >
-        </div>
-        <KeyValueEditor
-          items={activeEnv.variables}
-          keyPlaceholder="Variable"
-          valuePlaceholder="Value"
-          onchange={(variables) => {
-            envFile = {
-              ...envFile,
-              environments: envFile.environments.map((en) =>
-                en.id === activeEnv!.id ? { ...en, variables } : en,
-              ),
-            };
-            void persistEnv();
-          }}
-        />
-      {:else}
-        <p class="py-6 text-center text-sm text-neutral-500">
-          No environments. Click + Env to create one.
-        </p>
-      {/if}
-    </div>
-  </div>
-{/if}
 
 {#if envDeleteId && envPendingDelete}
   <div
