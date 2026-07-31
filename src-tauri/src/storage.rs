@@ -19,7 +19,8 @@ pub fn set_test_root(path: Option<PathBuf>) {
     *TEST_ROOT.lock().unwrap() = path;
 }
 
-fn app_data_dir() -> Result<PathBuf, String> {
+/// Forge data root: `~/Library/Application Support/Forge` (macOS) etc.
+pub fn app_data_dir() -> Result<PathBuf, String> {
     if let Some(ref p) = *TEST_ROOT.lock().unwrap() {
         fs::create_dir_all(p).map_err(|e| format!("Failed to create test data dir: {e}"))?;
         return Ok(p.clone());

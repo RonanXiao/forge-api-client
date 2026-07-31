@@ -89,6 +89,36 @@ gh release create v0.0.1-beta \
 - **beta**：`gh release create … --prerelease`  
 - **release**：去掉 `--prerelease`，tag 用 `vX.Y.Z-release`
 
+## forge-cli（可选命令行）
+
+桌面 App 与 CLI **共用同一份本地数据**（macOS：`~/Library/Application Support/Forge`）。
+
+- **打包时**：`forge-cli` 随 `Forge.app` 一起打进 DMG（`Contents/Resources/bin/forge-cli`），**默认不会**写到 PATH  
+- **安装**：打开 Forge → 左上角菜单 **Forge → Install forge-cli…**  
+  - 在 `~/.local/bin/forge` 创建**符号链接**指向 App 内二进制（无拷贝第二份）  
+  - 若终端找不到命令，把 `export PATH="$HOME/.local/bin:$PATH"` 写进 shell 配置  
+- **卸载**：菜单 **Uninstall forge-cli**（只删链接）
+
+常用命令：
+
+```bash
+forge --help
+forge path                 # 数据目录
+forge open                 # Finder 打开数据目录
+forge collections list
+forge collections show <id|name>
+forge env list
+forge env show <name|id>
+forge history list -n 20
+forge cookies list
+```
+
+开发时也可本地直接跑：
+
+```bash
+cd src-tauri && cargo run --release --bin forge-cli -- --help
+```
+
 ## 开发
 
 ```bash

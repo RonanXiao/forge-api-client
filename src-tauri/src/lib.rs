@@ -5,9 +5,10 @@ mod env_interp;
 mod form_fields;
 mod http;
 mod import;
-mod models;
+pub mod models;
 mod scripts;
-mod storage;
+pub mod storage;
+mod cli_install;
 
 use models::*;
 use std::collections::HashMap;
@@ -215,12 +216,70 @@ fn tree_reorder(
     Ok(collection)
 }
 
+#[tauri::command]
+fn forge_cli_status(app: tauri::AppHandle) -> cli_install::CliInstallStatus {
+    cli_install::status(&app)
+}
+
+#[tauri::command]
+fn forge_cli_install(app: tauri::AppHandle) -> Result<cli_install::CliInstallStatus, String> {
+    cli_install::install(&app)
+}
+
+#[tauri::command]
+fn forge_cli_uninstall(app: tauri::AppHandle) -> Result<cli_install::CliInstallStatus, String> {
+    cli_install::uninstall(&app)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
+        .setup(|app| {
+            setup_app_menu(app)?;
+            Ok(())
+        })
+        .on_menu_event(|app, event| {
+            match event.id().as_ref() {
+                "install_forge_cli" => match cli_install::install(app) {
+                    Ok(st) => {
+                        use tauri_plugin_dialog::DialogExt;
+                        app.dialog()
+                            .message(&st.message)
+                            .title("Install forge-cli")
+                            .show(|_| {});
+                    }
+                    Err(e) => {
+                        use tauri_plugin_dialog::DialogExt;
+                        app.dialog()
+                            .message(&e)
+                            .title("Install forge-cli failed")
+                            .kind(tauri_plugin_dialog::MessageDialogKind::Error)
+                            .show(|_| {});
+                    }
+                },
+                "uninstall_forge_cli" => match cli_install::uninstall(app) {
+                    Ok(st) => {
+                        use tauri_plugin_dialog::DialogExt;
+                        app.dialog()
+                            .message(&st.message)
+                            .title("Uninstall forge-cli")
+                            .show(|_| {});
+                    }
+                    Err(e) => {
+                        use tauri_plugin_dialog::DialogExt;
+                        app.dialog()
+                            .message(&e)
+                            .title("Uninstall failed")
+                            .kind(tauri_plugin_dialog::MessageDialogKind::Error)
+                            .show(|_| {});
+                    }
+                },
+                _ => {}
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             send_http_request,
             list_collections,
@@ -250,7 +309,94 @@ pub fn run() {
             tree_rename,
             tree_delete,
             tree_reorder,
+            forge_cli_status,
+            forge_cli_install,
+            forge_cli_uninstall,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+fn setup_app_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+
+    let handle = app.handle();
+    let install = MenuItem::with_id(
+        handle,
+        "install_forge_cli",
+        "Install forge-cli…",
+        true,
+        None::<&str>,
+    )?;
+    let uninstall = MenuItem::with_id(
+        handle,
+        "uninstall_forge_cli",
+        "Uninstall forge-cli",
+        true,
+        None::<&str>,
+    )?;
+
+    // macOS: first submenu becomes the app menu (named after productName "Forge")
+    #[cfg(target_os = "macos")]
+    let menu = {
+        let app_menu = Submenu::with_items(
+            handle,
+            "Forge",
+            true,
+            &[
+                &PredefinedMenuItem::about(handle, Some("About Forge"), None)?,
+                &PredefinedMenuItem::separator(handle)?,
+                &install,
+                &uninstall,
+                &PredefinedMenuItem::separator(handle)?,
+                &PredefinedMenuItem::services(handle, None)?,
+                &PredefinedMenuItem::separator(handle)?,
+                &PredefinedMenuItem::hide(handle, None)?,
+                &PredefinedMenuItem::hide_others(handle, None)?,
+                &PredefinedMenuItem::show_all(handle, None)?,
+                &PredefinedMenuItem::separator(handle)?,
+                &PredefinedMenuItem::quit(handle, None)?,
+            ],
+        )?;
+        let edit = Submenu::with_items(
+            handle,
+            "Edit",
+            true,
+            &[
+                &PredefinedMenuItem::undo(handle, None)?,
+                &PredefinedMenuItem::redo(handle, None)?,
+                &PredefinedMenuItem::separator(handle)?,
+                &PredefinedMenuItem::cut(handle, None)?,
+                &PredefinedMenuItem::copy(handle, None)?,
+                &PredefinedMenuItem::paste(handle, None)?,
+                &PredefinedMenuItem::select_all(handle, None)?,
+            ],
+        )?;
+        let window = Submenu::with_items(
+            handle,
+            "Window",
+            true,
+            &[
+                &PredefinedMenuItem::minimize(handle, None)?,
+                &PredefinedMenuItem::maximize(handle, None)?,
+                &PredefinedMenuItem::separator(handle)?,
+                &PredefinedMenuItem::close_window(handle, None)?,
+            ],
+        )?;
+        Menu::with_items(handle, &[&app_menu, &edit, &window])?
+    };
+
+    #[cfg(not(target_os = "macos"))]
+    let menu = {
+        let tools = Submenu::with_items(
+            handle,
+            "Tools",
+            true,
+            &[&install, &uninstall],
+        )?;
+        Menu::with_items(handle, &[&tools])?
+    };
+
+    app.set_menu(menu)?;
+    Ok(())
 }
