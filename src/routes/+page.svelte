@@ -75,6 +75,8 @@
   let logs = $state<string[]>([]);
   let assertions = $state<AssertionResult[]>([]);
   let showEnv = $state(false);
+  /** When set, show delete-environment confirmation for this env id */
+  let envDeleteId = $state<string | null>(null);
   let showSettings = $state(false);
   let showImport = $state(false);
   let showCookies = $state(false);
@@ -156,7 +158,45 @@
       }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "l") {
         e.preventDefault();
+        if (envDeleteId) envDeleteId = null;
         showEnv = !showEnv;
+      }
+      if (e.key === "Escape") {
+        // Confirm dialog first, then Environments modal
+        if (envDeleteId) {
+          e.preventDefault();
+          envDeleteId = null;
+          return;
+        }
+        if (showEnv) {
+          e.preventDefault();
+          showEnv = false;
+          return;
+        }
+        if (showCodegen) {
+          e.preventDefault();
+          showCodegen = false;
+          return;
+        }
+        if (showSettings) {
+          e.preventDefault();
+          showSettings = false;
+          return;
+        }
+        if (showImport) {
+          e.preventDefault();
+          showImport = false;
+          return;
+        }
+        if (showCookies) {
+          e.preventDefault();
+          showCookies = false;
+          return;
+        }
+        if (showSearch) {
+          e.preventDefault();
+          showSearch = false;
+        }
       }
     }
     window.addEventListener("keydown", onKey);
@@ -687,6 +727,35 @@
     await saveEnvironments(envFile);
   }
 
+  function requestDeleteEnv(id: string) {
+    envDeleteId = id;
+  }
+
+  async function confirmDeleteEnv() {
+    if (!envDeleteId) return;
+    const id = envDeleteId;
+    const remaining = envFile.environments.filter((e) => e.id !== id);
+    let activeId = config.activeEnvId ?? envFile.activeId ?? null;
+    if (activeId === id) {
+      activeId = remaining[0]?.id ?? null;
+    }
+    envFile = { environments: remaining, activeId };
+    config = { ...config, activeEnvId: activeId };
+    envDeleteId = null;
+    await saveEnvironments(envFile);
+    await saveConfig(config);
+  }
+
+  function cancelDeleteEnv() {
+    envDeleteId = null;
+  }
+
+  let envPendingDelete = $derived(
+    envDeleteId
+      ? envFile.environments.find((e) => e.id === envDeleteId) ?? null
+      : null,
+  );
+
   async function toggleTheme() {
     const theme = config.theme === "light" ? "dark" : "light";
     config = { ...config, theme };
@@ -908,23 +977,52 @@
 </div>
 
 {#if showEnv}
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+  <!-- backdrop click closes env (unless confirm open) -->
+  <div
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+    role="presentation"
+    onclick={(e) => {
+      if (e.target === e.currentTarget && !envDeleteId) showEnv = false;
+    }}
+  >
     <div
       class="max-h-[80vh] w-full max-w-xl overflow-auto rounded-xl border border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900 p-4 shadow-2xl"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="env-dialog-title"
     >
       <div class="mb-3 flex items-center justify-between">
-        <h2 class="text-sm font-semibold">Environments</h2>
-        <button type="button" class="icon-btn" onclick={() => (showEnv = false)}>×</button>
+        <h2 id="env-dialog-title" class="text-sm font-semibold">Environments</h2>
+        <button
+          type="button"
+          class="icon-btn"
+          title="Close (Esc)"
+          onclick={() => {
+            envDeleteId = null;
+            showEnv = false;
+          }}>×</button
+        >
       </div>
-      <div class="mb-3 flex gap-2">
+      <div class="mb-3 flex flex-wrap items-center gap-2">
         {#each envFile.environments as env}
-          <button
-            type="button"
-            class="chip {env.id === (config.activeEnvId ?? envFile.activeId)
-              ? 'chip-active'
-              : ''}"
-            onclick={() => switchEnv(env.id)}>{env.name}</button
-          >
+          <div class="group flex items-center">
+            <button
+              type="button"
+              class="chip rounded-r-none {env.id === (config.activeEnvId ?? envFile.activeId)
+                ? 'chip-active'
+                : ''}"
+              onclick={() => switchEnv(env.id)}>{env.name}</button
+            >
+            <button
+              type="button"
+              class="chip rounded-l-none border-l-0 px-1.5 text-neutral-400 hover:bg-rose-50 hover:text-rose-500 dark:hover:bg-rose-950/40"
+              title="Delete environment"
+              onclick={(e) => {
+                e.stopPropagation();
+                requestDeleteEnv(env.id);
+              }}>×</button
+            >
+          </div>
         {/each}
         <button
           type="button"
@@ -935,28 +1033,40 @@
               ...envFile,
               environments: [
                 ...envFile.environments,
-                { id, name: `env${envFile.environments.length + 1}`, variables: [emptyKeyValue()] },
+                {
+                  id,
+                  name: `env${envFile.environments.length + 1}`,
+                  variables: [emptyKeyValue()],
+                },
               ],
             };
-            await persistEnv();
+            await switchEnv(id);
           }}>+ Env</button
         >
       </div>
       {#if activeEnv}
-        <input
-          class="input-field mb-2 w-full text-sm"
-          value={activeEnv.name}
-          oninput={(e) => {
-            const name = e.currentTarget.value;
-            envFile = {
-              ...envFile,
-              environments: envFile.environments.map((en) =>
-                en.id === activeEnv!.id ? { ...en, name } : en,
-              ),
-            };
-          }}
-          onchange={persistEnv}
-        />
+        <div class="mb-2 flex items-center gap-2">
+          <input
+            class="input-field min-w-0 flex-1 text-sm"
+            value={activeEnv.name}
+            oninput={(e) => {
+              const name = e.currentTarget.value;
+              envFile = {
+                ...envFile,
+                environments: envFile.environments.map((en) =>
+                  en.id === activeEnv!.id ? { ...en, name } : en,
+                ),
+              };
+            }}
+            onchange={persistEnv}
+          />
+          <button
+            type="button"
+            class="chip shrink-0 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40"
+            title="Delete this environment"
+            onclick={() => requestDeleteEnv(activeEnv!.id)}>Delete</button
+          >
+        </div>
         <KeyValueEditor
           items={activeEnv.variables}
           keyPlaceholder="Variable"
@@ -971,7 +1081,44 @@
             void persistEnv();
           }}
         />
+      {:else}
+        <p class="py-6 text-center text-sm text-neutral-500">
+          No environments. Click + Env to create one.
+        </p>
       {/if}
+    </div>
+  </div>
+{/if}
+
+{#if envDeleteId && envPendingDelete}
+  <div
+    class="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
+    role="presentation"
+    onclick={(e) => {
+      if (e.target === e.currentTarget) cancelDeleteEnv();
+    }}
+  >
+    <div
+      class="w-full max-w-sm rounded-xl border border-neutral-200 bg-white p-4 shadow-2xl dark:border-neutral-700 dark:bg-neutral-900"
+      role="alertdialog"
+      aria-modal="true"
+      aria-labelledby="env-delete-title"
+    >
+      <h3 id="env-delete-title" class="mb-2 text-sm font-semibold">Delete environment?</h3>
+      <p class="mb-4 text-xs leading-relaxed text-neutral-600 dark:text-neutral-400">
+        Delete <span class="font-semibold text-neutral-800 dark:text-neutral-200"
+          >{envPendingDelete.name}</span
+        > and all of its variables? This cannot be undone.
+      </p>
+      <div class="flex justify-end gap-2">
+        <button type="button" class="chip" onclick={cancelDeleteEnv}>Cancel</button>
+        <button
+          type="button"
+          class="rounded-md bg-rose-500 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-600"
+          onclick={confirmDeleteEnv}>Delete</button
+        >
+      </div>
+      <p class="mt-3 text-[10px] text-neutral-400">Press Esc to cancel</p>
     </div>
   </div>
 {/if}
