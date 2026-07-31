@@ -41,7 +41,11 @@ export interface CodegenInput {
   url: string;
   headers: { key: string; value: string; enabled: boolean }[];
   query: { key: string; value: string; enabled: boolean }[];
-  body: { type: string; content: string };
+  body: {
+    type: string;
+    content: string;
+    language?: string | null;
+  };
   auth: {
     type: string;
     token: string;

@@ -717,14 +717,20 @@
 
   async function doCodegen(lang: string) {
     if (!request) return;
+    // Deep clone so Svelte proxies don't break Tauri IPC; include full body config
+    const body = normalizeBody(request.body ?? { type: "none", content: "" });
     codegenText = await generateCode(
       {
         method: request.method,
         url: request.url,
-        headers: request.headers,
-        query: request.query,
-        body: request.body,
-        auth: request.auth,
+        headers: deepClone(request.headers ?? []),
+        query: deepClone(request.query ?? []),
+        body: {
+          type: body.type,
+          content: body.content,
+          language: body.language ?? null,
+        },
+        auth: deepClone(request.auth),
       },
       lang,
     );
