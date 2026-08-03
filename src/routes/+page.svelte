@@ -479,9 +479,13 @@
 
       const res = await sendHttpRequest(payload);
       response = res;
+      // Network errors return status 0 + short error + verbose (do not raise top banner)
+      if (res.error) {
+        error = null;
+      }
 
-      // Post scripts
-      if (scriptMeta.post.some((s) => s.trim())) {
+      // Post scripts (skip when request never reached the server)
+      if (!res.error && scriptMeta.post.some((s) => s.trim())) {
         const postRes = await executeScripts({
           engine: scriptMeta.engine,
           preScripts: [],
@@ -922,11 +926,11 @@
   />
 
   <main class="flex min-w-0 flex-1 flex-col">
-    {#if error}
+    {#if error && !error.includes("--- verbose ---")}
       <div
         class="flex shrink-0 items-center gap-2 border-b border-rose-200 bg-rose-50 px-3 py-1.5 text-xs text-rose-700 dark:border-rose-900 dark:bg-rose-950/50 dark:text-rose-300"
       >
-        <span class="min-w-0 flex-1 break-all">{error}</span>
+        <span class="min-w-0 flex-1 truncate" title={error}>{error}</span>
         <button type="button" class="icon-btn shrink-0" onclick={() => (error = null)}
           >×</button
         >

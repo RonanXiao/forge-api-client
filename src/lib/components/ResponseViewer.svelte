@@ -42,6 +42,22 @@
   function expandAll() {
     bodyViewer?.expandAll();
   }
+
+  /** Short network error from response (timeout etc.) — not the global script error */
+  let sendError = $derived(response?.error?.trim() || null);
+  let verboseText = $derived(
+    (response?.verbose && response.verbose.trim()) || null,
+  );
+
+  // Prefer short error for Body; never dump verbose trace here
+  let shortError = $derived.by(() => {
+    if (sendError) return sendError;
+    if (!error) return null;
+    if (error.includes("--- verbose ---")) {
+      return error.split("\n\n--- verbose ---")[0]?.trim() || "Request failed";
+    }
+    return error;
+  });
 </script>
 
 <div class="flex h-full min-h-0 flex-col border-t border-app bg-neutral-50/80 dark:bg-neutral-950/40">
@@ -50,7 +66,7 @@
       >Response</span
     >
 
-    {#if response}
+    {#if response && !sendError}
       <span
         class="rounded-full px-2 py-0.5 font-mono text-xs font-semibold ring-1 ring-inset {statusBadgeBg(
           response.status,
@@ -65,6 +81,16 @@
       <span class="text-xs text-neutral-500 dark:text-neutral-400"
         >{formatBytes(response.bodySize)}</span
       >
+    {:else if sendError || (response && response.status === 0)}
+      <span
+        class="rounded-full bg-rose-500/15 px-2 py-0.5 font-mono text-xs font-semibold text-rose-600 ring-1 ring-inset ring-rose-500/30 dark:text-rose-400"
+        >Error</span
+      >
+      {#if response}
+        <span class="text-xs text-neutral-500 dark:text-neutral-400"
+          >{formatDuration(response.durationMs)}</span
+        >
+      {/if}
     {:else if sending}
       <span class="text-xs text-[#FF6C37]">Waiting for response…</span>
     {:else if error}
@@ -91,13 +117,7 @@
   </div>
 
   <div class="flex min-h-0 flex-1 flex-col overflow-hidden p-3">
-    {#if error && tab !== "verbose"}
-      <div
-        class="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-2 font-mono text-sm text-rose-600 dark:text-rose-300 whitespace-pre-wrap"
-      >
-        {error}
-      </div>
-    {:else if sending}
+    {#if sending}
       <div class="flex h-full items-center justify-center">
         <div class="flex flex-col items-center gap-3 text-neutral-500 dark:text-neutral-400">
           <div
@@ -107,12 +127,7 @@
         </div>
       </div>
     {:else if tab === "verbose"}
-      {#if error}
-        <pre
-          class="min-h-0 flex-1 overflow-auto rounded-md border border-app bg-white p-3 font-mono text-[12px] leading-relaxed text-rose-600 whitespace-pre-wrap dark:bg-neutral-900 dark:text-rose-300"
-          >{error}</pre
-        >
-      {:else if response?.verbose}
+      {#if verboseText}
         <div class="mb-2 flex items-center gap-2">
           <span class="text-[11px] text-neutral-500"
             >curl -v style trace (connection · request · response)</span
@@ -121,13 +136,13 @@
             type="button"
             class="chip ml-auto"
             onclick={() => {
-              void navigator.clipboard.writeText(response?.verbose ?? "");
+              void navigator.clipboard.writeText(verboseText ?? "");
             }}>Copy</button
           >
         </div>
         <pre
           class="min-h-0 flex-1 overflow-auto rounded-md border border-app bg-white p-3 font-mono text-[12px] leading-relaxed whitespace-pre-wrap dark:bg-neutral-900"
-          >{#each (response.verbose ?? "").split("\n") as line}{#if line.startsWith("*")}<span
+          >{#each verboseText.split("\n") as line}{#if line.startsWith("*")}<span
                 class="text-neutral-400 dark:text-neutral-500">{line}</span
               >{"\n"}{:else if line.startsWith(">")}<span
                 class="text-emerald-600 dark:text-emerald-400">{line}</span
@@ -136,6 +151,11 @@
               >{"\n"}{:else}<span class="text-neutral-700 dark:text-neutral-300"
                 >{line}</span
               >{"\n"}{/if}{/each}</pre
+        >
+      {:else if shortError}
+        <pre
+          class="min-h-0 flex-1 overflow-auto rounded-md border border-app bg-white p-3 font-mono text-[12px] leading-relaxed text-rose-600 whitespace-pre-wrap dark:bg-neutral-900 dark:text-rose-300"
+          >{shortError}</pre
         >
       {:else}
         <p class="text-sm text-neutral-500">
@@ -168,35 +188,56 @@
           {/each}
         </ul>
       {/if}
-    {:else if !response}
+    {:else if !response && !shortError}
       <div
         class="flex h-full items-center justify-center text-sm text-neutral-400 dark:text-neutral-600"
       >
         Response will appear here
       </div>
     {:else if tab === "headers"}
-      <table class="w-full text-left text-xs">
-        <thead>
-          <tr class="text-[11px] uppercase tracking-wide text-neutral-500">
-            <th class="pb-2 pr-4 font-medium">Header</th>
-            <th class="pb-2 font-medium">Value</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each response.headers as h}
-            <tr class="border-t border-app">
-              <td class="py-1.5 pr-4 font-mono text-neutral-700 dark:text-neutral-300"
-                >{h.key}</td
-              >
-              <td
-                class="py-1.5 font-mono text-neutral-500 dark:text-neutral-400 break-all"
-                >{h.value}</td
-              >
+      {#if response && response.headers.length > 0}
+        <table class="w-full text-left text-xs">
+          <thead>
+            <tr class="text-[11px] uppercase tracking-wide text-neutral-500">
+              <th class="pb-2 pr-4 font-medium">Header</th>
+              <th class="pb-2 font-medium">Value</th>
             </tr>
-          {/each}
-        </tbody>
-      </table>
-    {:else}
+          </thead>
+          <tbody>
+            {#each response.headers as h}
+              <tr class="border-t border-app">
+                <td class="py-1.5 pr-4 font-mono text-neutral-700 dark:text-neutral-300"
+                  >{h.key}</td
+                >
+                <td
+                  class="py-1.5 font-mono text-neutral-500 dark:text-neutral-400 break-all"
+                  >{h.value}</td
+                >
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      {:else}
+        <p class="text-sm text-neutral-500">No response headers.</p>
+      {/if}
+    {:else if tab === "body"}
+      {#if shortError && (!response?.body || response.body.length === 0)}
+        <!-- Body: short error only; open Verbose for full curl -v dump -->
+        <div
+          class="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-3 text-sm text-rose-700 dark:text-rose-300"
+        >
+          <p class="font-medium">{shortError}</p>
+          {#if verboseText}
+            <p class="mt-2 text-[11px] text-rose-600/80 dark:text-rose-400/80">
+              See the <button
+                type="button"
+                class="underline decoration-rose-400 underline-offset-2"
+                onclick={() => (tab = "verbose")}>Verbose</button
+              > tab for full request trace.
+            </p>
+          {/if}
+        </div>
+      {:else if response}
       <div class="mb-2 flex flex-wrap items-center gap-2">
         <button
           type="button"
@@ -231,6 +272,13 @@
           {dark}
         />
       </div>
+      {:else if shortError}
+        <div
+          class="rounded-lg border border-rose-500/30 bg-rose-500/10 px-3 py-3 text-sm text-rose-700 dark:text-rose-300"
+        >
+          <p class="font-medium">{shortError}</p>
+        </div>
+      {/if}
     {/if}
   </div>
 </div>

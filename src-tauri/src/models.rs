@@ -419,6 +419,9 @@ pub struct HttpResponse {
     /// curl -v style debug trace (connect, request, response headers, timing)
     #[serde(default)]
     pub verbose: String,
+    /// Short network/send error (timeout, DNS, etc.). Full trace stays in `verbose`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

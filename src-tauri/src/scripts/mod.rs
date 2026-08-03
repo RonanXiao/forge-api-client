@@ -356,6 +356,7 @@ mod tests {
                 duration_ms: 12,
                 content_type: Some("application/json".into()),
                 verbose: String::new(),
+                error: None,
             }),
             variables: HashMap::new(),
             permissions: ScriptPermissions {
@@ -442,6 +443,7 @@ mod tests {
                 duration_ms: 5,
                 content_type: None,
                 verbose: String::new(),
+                error: None,
             }),
             variables: HashMap::new(),
             permissions: ScriptPermissions::default(),

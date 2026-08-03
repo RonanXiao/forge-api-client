@@ -108,6 +108,8 @@ export interface HttpResponse {
   contentType?: string | null;
   /** curl -v style debug trace */
   verbose?: string | null;
+  /** Short send/timeout error; full dump lives in verbose only */
+  error?: string | null;
 }
 
 export interface HistoryEntry {

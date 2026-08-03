@@ -274,7 +274,7 @@ pub async fn send_request(
     let response = match request_builder.send().await {
         Ok(r) => r,
         Err(e) => {
-            let elapsed = start.elapsed().as_millis();
+            let elapsed = start.elapsed().as_millis() as u64;
             verbose.push_str(&format!(
                 "> {} {} HTTP/1.1\n",
                 method_s,
@@ -288,7 +288,20 @@ pub async fn send_request(
             verbose.push_str("* Sending request to server\n");
             verbose.push_str(&format!("* Request failed after {elapsed} ms\n"));
             verbose.push_str(&format!("* Error: {e}\n"));
-            return Err(format!("Request failed: {e}\n\n--- verbose ---\n{verbose}"));
+
+            // Short message for Body/UI; full curl -v trace only in `verbose`
+            let short = humanize_request_error(&e.to_string(), elapsed);
+            return Ok(HttpResponse {
+                status: 0,
+                status_text: "Error".into(),
+                headers: vec![],
+                body: String::new(),
+                body_size: 0,
+                duration_ms: elapsed,
+                content_type: None,
+                verbose,
+                error: Some(short),
+            });
         }
     };
     let duration_ms = start.elapsed().as_millis() as u64;
@@ -395,7 +408,33 @@ pub async fn send_request(
         duration_ms,
         content_type,
         verbose,
+        error: None,
     })
+}
+
+/// Compact, user-facing error (no verbose dump).
+fn humanize_request_error(err: &str, elapsed_ms: u64) -> String {
+    let lower = err.to_lowercase();
+    if lower.contains("timed out") || lower.contains("timeout") {
+        return format!("Request timed out after {elapsed_ms} ms");
+    }
+    if lower.contains("dns") || lower.contains("resolve") || lower.contains("name or service") {
+        return format!("DNS / host resolution failed: {err}");
+    }
+    if lower.contains("connection refused") {
+        return format!("Connection refused: {err}");
+    }
+    if lower.contains("certificate") || lower.contains("ssl") || lower.contains("tls") {
+        return format!("TLS / certificate error: {err}");
+    }
+    if lower.contains("error sending request") {
+        // Strip long URL noise when present
+        if let Some(rest) = err.split("for url (").nth(1) {
+            let url = rest.trim_end_matches(')');
+            return format!("Failed to send request to {url}");
+        }
+    }
+    format!("Request failed: {err}")
 }
 
 fn version_label(v: reqwest::Version) -> &'static str {
